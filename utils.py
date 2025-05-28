@@ -15,26 +15,55 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def extract_rdf_shacl_improved(response_text):
+    """Improved extraction with better error handling and debugging"""
+    if not response_text or not response_text.strip():
+        st.error("❌ Empty response from LLM")
+        return "", ""
+    
     parts = response_text.split("```")
     rdf_code = ""
     shacl_code = ""
 
     code_blocks = []
     for i, part in enumerate(parts):
-        if i % 2 == 1:
+        if i % 2 == 1:  # This is a code block
             part_clean = part.strip()
+            # Remove language identifier if present
             if part_clean.startswith("turtle"):
                 part_clean = part_clean[6:].strip()
             elif part_clean.startswith("ttl"):
                 part_clean = part_clean[3:].strip()
+            
+            # Check if it looks like RDF/SHACL (contains @prefix or sh:)
             if "@prefix" in part_clean or "sh:" in part_clean:
                 code_blocks.append(part_clean)
-
+    
+    # Assign first block to RDF, second to SHACL
     if len(code_blocks) >= 1:
         rdf_code = code_blocks[0]
     if len(code_blocks) >= 2:
         shacl_code = code_blocks[1]
-
+    else:
+        # If only one block, try to split by detecting SHACL patterns
+        if rdf_code and ("sh:" in rdf_code or "Shape" in rdf_code):
+            lines = rdf_code.split('\n')
+            rdf_lines = []
+            shacl_lines = []
+            in_shacl = False
+            
+            for line in lines:
+                if "sh:" in line or "Shape" in line:
+                    in_shacl = True
+                if in_shacl:
+                    shacl_lines.append(line)
+                else:
+                    rdf_lines.append(line)
+            
+            if shacl_lines:
+                rdf_code = '\n'.join(rdf_lines)
+                shacl_code = '\n'.join(shacl_lines)
+    
+    # st.info(f"📊 Extracted RDF: {len(rdf_code)} chars, SHACL: {len(shacl_code)} chars")
     return rdf_code, shacl_code
 
 def call_llm(prompt, system_prompt, model_info):
@@ -43,7 +72,6 @@ def call_llm(prompt, system_prompt, model_info):
     temperature = model_info.get("temperature", 0.3)
 
     if provider == "OpenAI":
-        from openai import OpenAI
         client = OpenAI(api_key=model_info["api_key"])
         response = client.chat.completions.create(
             model=model,
@@ -56,7 +84,6 @@ def call_llm(prompt, system_prompt, model_info):
         return response.choices[0].message.content
 
     elif provider == "Anthropic":
-        from anthropic import Anthropic
         client = Anthropic(api_key=model_info["api_key"])
         response = client.messages.create(
             model=model,
