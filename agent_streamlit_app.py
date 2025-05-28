@@ -44,8 +44,12 @@ if provider in ["OpenAI", "Anthropic"]:
 else:
     endpoint = st.sidebar.text_input("Ollama Endpoint", value="http://localhost:11434")
 
-max_opt = st.sidebar.number_input("Optimization Attempts", 1, 5, 3)
-max_corr = st.sidebar.number_input("Correction Attempts", 1, 5, 3)
+max_opt = st.sidebar.number_input("How many attempt to generate RDF/SHACL data?", 1, 10, 3, help="Number of times the LLM should attempt to generate RDF/SHACL")
+max_corr = st.sidebar.number_input("How many attempt to correct RDF/SHACL data to pass the validation process?", 1, 10, 3, help="Number of times the LLM should attempt to fix RDF/SHACL after validation fails")
+
+# Read content from a local text file
+with open("BAM_Creep.txt", "r") as file:
+    file_content = file.read()
 
 # Input section
 st.subheader("🔬 Input Test Data")
@@ -54,40 +58,9 @@ example = st.checkbox("Use example input")
 if uploaded_file is not None:
     user_input = uploaded_file.read().decode("utf-8")
 elif example:
-    user_input = st.text_area("Mechanical Test Description:", value="""BAM 5.2 Vh5205_C-95.LIS						
-------------------------------------						
-ENTRY	SYMBOL	UNIT		* Information common to all tests		
-Date of test start			30.8.23 9:06 AM			
-Test ID			Vh5205_C-95			
-Test standard			DIN EN ISO 204:2019-4	*		
-Specified temperature	T	?	980 °C	*		
-Type of loading			Tension	*		
-Initial stress	Ro	MPa	140			
-(Digital) Material Identifier			CMSX-6	*		
-"Description of the manufacturing process - as-tested material
-"			Single Crystal Investment Casting from a Vacuum Induction Refined Ingot and subsequent Heat Treatment (annealed and aged).	*		
-Single crystal orientation		°	7,5			
-Type of test piece II			Round cross section	*		
-Type of test piece III			Smooth test piece	*		
-Sensor type - Contacting extensometer			Clip-on extensometer	*		
-Min. test piece diameter at room temperature	D	mm	5,99			
-Reference length for calculation of percentage elongations	Lr = Lo	mm	23,9			
-Reference length for calculation of percentage extensions	Lr = Le	mm	22,9			
-Heating time		h	1,61			
-Soak time before the test		h	2,81			
-Test duration	t	h	1010			
-Creep rupture time	tu	h	Not applicable			
-Percentage permanent elongation	Aper	%	1,14			
-Percentage elongation after creep fracture	Au	%	Not applicable			
-Percentage reduction of area after creep fracture	Zu	%	Not applicable			
-Percentage total extension	et	%	0,964			
-Percentage initial total extension	eti	%	0,153			
-Percentage elastic extension	ee	%	0,153			
-Percentage initial plastic extension	ei	%	0			
-Percentage plastic extension	ep	%	0,811			
-Percentage creep extension	ef	%	0,811""")
+    user_input = st.text_area("Mechanical Test Description:", value = file_content, height=300)
 else:
-    user_input = st.text_area("Mechanical Test Description:", placeholder="Paste mechanical test data here...")
+    user_input = st.text_area("Mechanical Test Description:", placeholder="Paste mechanical test data here...", height=200)
 
 if st.button("Generate RDF & SHACL") and user_input.strip():
     with st.spinner("Running Agent-Based Pipeline..."):
@@ -122,6 +95,17 @@ if st.button("Generate RDF & SHACL") and user_input.strip():
             st.code(shacl_code, language="turtle")
 
         valid, report = agent.validator.run(rdf_code, shacl_code)
+        
+        correction_attempt = 0
+        while not valid and correction_attempt < max_corr:
+            correction_attempt += 1
+            st.warning(f"❌ SHACL Validation Failed. Attempting correction #{correction_attempt}/{max_corr}")
+            with st.expander(f"📋 Validation Report (Attempt {correction_attempt})"):
+                st.code(report)
+
+            rdf_code, shacl_code = agent.corrector.run(rdf_code, shacl_code, report)
+            valid, report = agent.validator.run(rdf_code, shacl_code)
+
         mappings = agent.ontology_mapper.run(user_input)
 
         st.subheader("📄 RDF Output")
@@ -145,16 +129,16 @@ if st.button("Generate RDF & SHACL") and user_input.strip():
             st.download_button("⬇️ Download SHACL", shacl_code, "validated_mechanical_test_shapes.ttl", "text/turtle")
 
         # RDF Graph Statistics
-        st.subheader("📊 RDF Model Summary")
-        try:
-            temp_graph = Graph()
-            temp_graph.parse(data=rdf_code, format="turtle")
-            st.metric("Triples", len(temp_graph))
-            st.metric("Subjects", len(set(temp_graph.subjects())))
-            st.metric("Predicates", len(set(temp_graph.predicates())))
-            st.metric("Objects", len(set(temp_graph.objects())))
-        except Exception:
-            st.info("Could not parse RDF for stats.")
+        # st.subheader("📊 RDF Model Summary")
+        # try:
+        #     temp_graph = Graph()
+        #     temp_graph.parse(data=rdf_code, format="turtle")
+        #     st.metric("Triples", len(temp_graph))
+        #     st.metric("Subjects", len(set(temp_graph.subjects())))
+        #     st.metric("Predicates", len(set(temp_graph.predicates())))
+        #     st.metric("Objects", len(set(temp_graph.objects())))
+        # except Exception:
+        #     st.info("Could not parse RDF for stats.")
 
         # Ontology Mappings
         st.subheader("🔎 Suggested Ontology Terms")
@@ -165,23 +149,101 @@ if st.button("Generate RDF & SHACL") and user_input.strip():
         def visualize_rdf(rdf_text):
             g = Graph().parse(data=rdf_text, format="turtle")
             nx_graph = nx.DiGraph()
+
             for s, p, o in g:
                 nx_graph.add_edge(str(s), str(o), label=str(p))
-            net = Network(height="900px", width="100%", directed=True)
-            net.repulsion(node_distance=300, spring_length=300)
+
+            # Create a larger network with improved physics settings
+            net = Network(height="900px", width="100%", directed=True, notebook=False)
+            
+            # Configure physics for better graph spacing
+            net.barnes_hut(gravity=-8000, central_gravity=0.3, spring_length=200, spring_strength=0.05, damping=0.09)
+            
+            # Increase node spacing
+            net.repulsion(node_distance=300, central_gravity=0.01, spring_length=300, spring_strength=0.05, damping=0.09)
+            
+            # Add nodes with larger size
+            # Inside your visualize_rdf function, update the node addition logic:
             for node in nx_graph.nodes:
-                label = node.split("/")[-1].split("#")[-1]
-                is_blank = bool(re.match(r'^n\\d+$', label))
-                net.add_node(node, label="" if is_blank else label, size=15 if is_blank else 25, color="#E8E8E8" if is_blank else "#97C2FC", font={'size': 16}, title=node)
+                # Extract shorter node labels for readability
+                short_label = node.split("/")[-1] if "/" in node else node
+                short_label = short_label.split("#")[-1] if "#" in short_label else short_label
+                
+                # Check if this is a blank node (starts with 'n' followed by numbers)
+                is_blank_node = bool(re.match(r'^n\d+$', short_label))
+                
+                # Use different styling for blank nodes
+                if is_blank_node:
+                    node_color = "#E8E8E8"  # Light gray
+                    node_size = 15  # Smaller size
+                    label = ""  # Hide the label
+                else:
+                    node_color = "#97C2FC"  # Default blue
+                    node_size = 25  # Normal size
+                    label = short_label
+                
+                net.add_node(node, label=label, size=node_size, 
+                            color=node_color, font={'size': 16}, 
+                            title=node)  # Title shows on hover
+
+            # Add edges with better visibility
             for u, v, d in nx_graph.edges(data=True):
-                label = d["label"].split("/")[-1].split("#")[-1]
-                net.add_edge(u, v, label=label, font={'size': 12}, title=d["label"])
+                # Extract shorter edge labels
+                edge_label = d["label"].split("/")[-1] if "/" in d["label"] else d["label"]
+                edge_label = edge_label.split("#")[-1] if "#" in edge_label else edge_label
+                
+                net.add_edge(u, v, label=edge_label, font={'size': 12}, width=1.5, title=d["label"])
+
+            # Set options for better visualization
+            net.set_options("""
+            const options = {
+                "physics": {
+                    "enabled": true,
+                    "stabilization": {
+                        "iterations": 100,
+                        "updateInterval": 10,
+                        "fit": true
+                    },
+                    "barnesHut": {
+                        "gravitationalConstant": -8000,
+                        "springLength": 250,
+                        "springConstant": 0.04,
+                        "damping": 0.09
+                    }
+                },
+                "layout": {
+                    "improvedLayout": true,
+                    "hierarchical": {
+                        "enabled": false
+                    }
+                },
+                "interaction": {
+                    "navigationButtons": true,
+                    "keyboard": true,
+                    "hover": true,
+                    "multiselect": true,
+                    "tooltipDelay": 100
+                }
+            }
+            """)
+
             tmp_dir = tempfile.mkdtemp()
-            path = os.path.join(tmp_dir, f"graph_{uuid.uuid4()}.html")
-            net.save_graph(path)
-            return path
+            html_path = os.path.join(tmp_dir, f"graph_{uuid.uuid4()}.html")
+            net.save_graph(html_path)
+            return html_path
 
         html_file = visualize_rdf(rdf_code)
         with open(html_file, 'r', encoding='utf-8') as f:
             html_content = f.read()
         components.html(html_content, height=1000, width=1200, scrolling=True)
+
+        # Add instructions for graph interaction
+        st.markdown("""
+        ### Graph Navigation Instructions:
+        - **Zoom**: Use mouse wheel or pinch gesture
+        - **Pan**: Click and drag empty space
+        - **Move nodes**: Click and drag nodes to rearrange
+        - **View details**: Hover over nodes or edges for full information
+        - **Select multiple**: Hold Ctrl or Cmd while clicking nodes
+        - **Reset view**: Double-click on empty space
+        """)
