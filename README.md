@@ -142,7 +142,7 @@ python-dotenv>=1.0.0
 
 **Anthropic Configuration:**
 
-- Models: `claude-3-5-sonnet-20250219`, `claude-3-5-haiku-20241022`
+- Models: `claude-sonnet-4-20250514`, `claude-3-5-haiku-latest`, `claude-opus-4-20250514`
 - Requires valid Anthropic API key
 - Excellent for complex reasoning tasks
 
