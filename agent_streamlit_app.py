@@ -322,33 +322,33 @@ if st.button("Generate RDF & SHACL"):
                 html_content = net.generate_html()
                 return html_content
             
-            # except Exception as e:
-            #     st.error(f"Failed to parse RDF: {e}")
-            #     return None
+            except Exception as e:
+                st.error(f"Failed to parse RDF: {e}")
+                return None
             # Handle different types of errors
-            except (openai.error.OpenAIError, AnthropicAuthError) as e:
-                if isinstance(e, openai.AuthenticationError):
-                    st.error("❌ **Invalid OpenAI API Key**\n\nThe provided OpenAI API key is incorrect. Please verify your API key at: https://platform.openai.com/account/api-keys")
-                elif isinstance(e, openai.RateLimitError):
-                    st.error("❌ **OpenAI Rate Limit Exceeded**\n\nYou're making requests too quickly. Please wait a moment and try again.")
-                elif isinstance(e, openai.InsufficientQuotaError):
-                    st.error("❌ **OpenAI Quota Exceeded**\n\nYou have exceeded your API usage quota. Please check your billing settings.")
-                else:
-                    # Check error message for other common issues
-                    error_message = str(e).lower()
-                    if "authentication" in error_message or "401" in error_message or "invalid_api_key" in error_message:
-                        if provider == "OpenAI":
-                            st.error("❌ **Invalid OpenAI API Key**\n\nPlease check your API key and try again.")
-                        elif provider == "Anthropic":
-                            st.error("❌ **Invalid Anthropic API Key**\n\nPlease check your API key and try again.")
-                    elif provider == "Ollama" and ("connection" in error_message or "refused" in error_message):
-                        st.error(f"❌ **Cannot Connect to Ollama**\n\nFailed to connect to Ollama at `{endpoint}`. Please make sure Ollama is running and accessible.")
-                    else:
-                        st.error(f"❌ **An Error Occurred**\n\nSomething went wrong: {type(e).__name__}")
+            # except (openai.error.OpenAIError, AnthropicAuthError) as e:
+            #     if isinstance(e, openai.AuthenticationError):
+            #         st.error("❌ **Invalid OpenAI API Key**\n\nThe provided OpenAI API key is incorrect. Please verify your API key at: https://platform.openai.com/account/api-keys")
+            #     elif isinstance(e, openai.RateLimitError):
+            #         st.error("❌ **OpenAI Rate Limit Exceeded**\n\nYou're making requests too quickly. Please wait a moment and try again.")
+            #     elif isinstance(e, openai.InsufficientQuotaError):
+            #         st.error("❌ **OpenAI Quota Exceeded**\n\nYou have exceeded your API usage quota. Please check your billing settings.")
+            #     else:
+            #         # Check error message for other common issues
+            #         error_message = str(e).lower()
+            #         if "authentication" in error_message or "401" in error_message or "invalid_api_key" in error_message:
+            #             if provider == "OpenAI":
+            #                 st.error("❌ **Invalid OpenAI API Key**\n\nPlease check your API key and try again.")
+            #             elif provider == "Anthropic":
+            #                 st.error("❌ **Invalid Anthropic API Key**\n\nPlease check your API key and try again.")
+            #         elif provider == "Ollama" and ("connection" in error_message or "refused" in error_message):
+            #             st.error(f"❌ **Cannot Connect to Ollama**\n\nFailed to connect to Ollama at `{endpoint}`. Please make sure Ollama is running and accessible.")
+            #         else:
+            #             st.error(f"❌ **An Error Occurred**\n\nSomething went wrong: {type(e).__name__}")
                 
-                # Optional: Show technical details for debugging
-                with st.expander("🔧 Technical Details (for debugging)"):
-                    st.code(str(e))
+            #     # Optional: Show technical details for debugging
+            #     with st.expander("🔧 Technical Details (for debugging)"):
+            #         st.code(str(e))
             
             # finally:
             # # Clean up temporary files
