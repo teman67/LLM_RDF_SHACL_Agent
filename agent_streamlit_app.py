@@ -15,12 +15,15 @@ import streamlit.components.v1 as components
 import uuid
 import re
 import requests
+import openai
+from anthropic import AuthenticationError as AnthropicAuthError
 
 load_dotenv()
 
 
 st.set_page_config(page_title="SemAiOn Agent", layout="wide")
 st.title("🧠 SemAiOn: Agent-Based Semantic Data Generator")
+
 
 # Sidebar: API Configuration
 st.sidebar.header("🔐 API Configuration")
@@ -29,10 +32,11 @@ if provider == "OpenAI":
     model_options = ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"]
     model = st.sidebar.selectbox("OpenAI Model", model_options, index=0)
 elif provider == "Anthropic":
-    model_options = ["claude-3-7-sonnet-20250219", "claude-3-5-haiku-20241022"]
-    model = st.sidebar.selectbox("Claude Model", model_options, index=1)
+    # model_options = ["claude-3-7-sonnet-20250219", "claude-3-5-haiku-20241022"]
+    model_options = ["claude-sonnet-4-20250514", "claude-3-5-haiku-latest", "claude-opus-4-20250514"]
+    model = st.sidebar.selectbox("Claude Model", model_options, index=0)
 else:
-    model_options = ["llama3.3:70b-instruct-q8_0", "qwen3:32b-q8_0", "phi4-reasoning:14b-plus-fp16"]
+    model_options = ["llama3.3:70b-instruct-q8_0", "qwen3:32b-q8_0", "phi4-reasoning:14b-plus-fp16" , "mistral-small3.1:24b-instruct-2503-q8_0"]
     model = st.sidebar.selectbox("Ollama Model", model_options, index=0)
 temperature = st.sidebar.slider("Temperature", 0.0, 1.0, 0.3)
 
@@ -69,6 +73,15 @@ else:
     user_input = st.text_area("Mechanical Test Description:", placeholder="Paste mechanical test data here...", height=200)
 
 
+def safe_execute(func, *args, **kwargs):
+    """Safely execute a function and handle all exceptions"""
+    try:
+        return func(*args, **kwargs)
+    except Exception as e:
+        # Log the error for debugging (optional)
+        print(f"Error: {e}")  # This will only show in your console, not to users
+        raise e  # Re-raise to be caught by your main try-catch
+
 if st.button("Generate RDF & SHACL"):
 
      # Check for input first
@@ -95,7 +108,8 @@ if st.button("Generate RDF & SHACL"):
             agent = SemanticPipelineAgent(model_info, max_opt, max_corr)
             # Manual pipeline steps for visibility
             st.subheader("🛠️ Generation & Optimization Passes")
-            rdf_code, shacl_code = agent.generator.run(user_input)
+            # rdf_code, shacl_code = agent.generator.run(user_input)
+            rdf_code, shacl_code = safe_execute(agent.generator.run, user_input)
             st.markdown("### 🟢 Initial RDF Output")
             st.code(rdf_code, language="turtle")
             st.markdown("### 🟢 Initial SHACL Output")
@@ -248,33 +262,67 @@ if st.button("Generate RDF & SHACL"):
                     }
                     """)
 
-                    tmp_dir = tempfile.mkdtemp()
-                    html_path = os.path.join(tmp_dir, f"graph_{uuid.uuid4()}.html")
-                    net.save_graph(html_path)
-                    return html_path
+                    # tmp_dir = tempfile.mkdtemp()
+                    # html_path = os.path.join(tmp_dir, f"graph_{uuid.uuid4()}.html")
+                    # net.save_graph(html_path)
+                    # return html_path
+                    # Generate HTML content directly instead of saving to file
+                    html_content = net.generate_html()
+                    return html_content
                 
-                except Exception as e:
-                    st.error(f"Failed to parse RDF: {e}")
-                    return None
+                # except Exception as e:
+                #     st.error(f"Failed to parse RDF: {e}")
+                #     return None
+                # Handle different types of errors
+                except (openai.error.OpenAIError, AnthropicAuthError) as e:
+                    if isinstance(e, openai.AuthenticationError):
+                        st.error("❌ **Invalid OpenAI API Key**\n\nThe provided OpenAI API key is incorrect. Please verify your API key at: https://platform.openai.com/account/api-keys")
+                    elif isinstance(e, openai.RateLimitError):
+                        st.error("❌ **OpenAI Rate Limit Exceeded**\n\nYou're making requests too quickly. Please wait a moment and try again.")
+                    elif isinstance(e, openai.InsufficientQuotaError):
+                        st.error("❌ **OpenAI Quota Exceeded**\n\nYou have exceeded your API usage quota. Please check your billing settings.")
+                    else:
+                        # Check error message for other common issues
+                        error_message = str(e).lower()
+                        if "authentication" in error_message or "401" in error_message or "invalid_api_key" in error_message:
+                            if provider == "OpenAI":
+                                st.error("❌ **Invalid OpenAI API Key**\n\nPlease check your API key and try again.")
+                            elif provider == "Anthropic":
+                                st.error("❌ **Invalid Anthropic API Key**\n\nPlease check your API key and try again.")
+                        elif provider == "Ollama" and ("connection" in error_message or "refused" in error_message):
+                            st.error(f"❌ **Cannot Connect to Ollama**\n\nFailed to connect to Ollama at `{endpoint}`. Please make sure Ollama is running and accessible.")
+                        else:
+                            st.error(f"❌ **An Error Occurred**\n\nSomething went wrong: {type(e).__name__}")
+                    
+                    # Optional: Show technical details for debugging
+                    with st.expander("🔧 Technical Details (for debugging)"):
+                        st.code(str(e))
                 
-                finally:
-                # Clean up temporary files
-                    if 'tmp_dir' in locals():
-                        import shutil
-                        shutil.rmtree(tmp_dir, ignore_errors=True)
+                # finally:
+                # # Clean up temporary files
+                #     if 'tmp_dir' in locals():
+                #         import shutil
+                #         shutil.rmtree(tmp_dir, ignore_errors=True)
 
-            html_file = visualize_rdf(rdf_code)
-            with open(html_file, 'r', encoding='utf-8') as f:
-                html_content = f.read()
-            components.html(html_content, height=1000, width=1200, scrolling=True)
+            # html_file = visualize_rdf(rdf_code)
+            # with open(html_file, 'r', encoding='utf-8') as f:
+            #     html_content = f.read()
+            # components.html(html_content, height=1000, width=1200, scrolling=True)
 
-            # Add instructions for graph interaction
-            st.markdown("""
-            ### Graph Navigation Instructions:
-            - **Zoom**: Use mouse wheel or pinch gesture
-            - **Pan**: Click and drag empty space
-            - **Move nodes**: Click and drag nodes to rearrange
-            - **View details**: Hover over nodes or edges for full information
-            - **Select multiple**: Hold Ctrl or Cmd while clicking nodes
-            - **Reset view**: Double-click on empty space
-            """)
+            # Replace the code that calls visualize_rdf with this:
+            html_content = visualize_rdf(rdf_code)
+            if html_content:
+                components.html(html_content, height=1000, width=1200, scrolling=True)
+
+                # Add instructions for graph interaction
+                st.markdown("""
+                ### Graph Navigation Instructions:
+                - **Zoom**: Use mouse wheel or pinch gesture
+                - **Pan**: Click and drag empty space
+                - **Move nodes**: Click and drag nodes to rearrange
+                - **View details**: Hover over nodes or edges for full information
+                - **Select multiple**: Hold Ctrl or Cmd while clicking nodes
+                - **Reset view**: Double-click on empty space
+                """)
+            else:
+                st.error("Could not generate RDF visualization")
