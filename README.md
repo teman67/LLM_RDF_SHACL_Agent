@@ -1,12 +1,12 @@
-# 🧠 SemAiOn: Agent-Based Semantic Data Generator
+# 🧠 AgentSem: Automated Semantic Data Generation Through Multi-Agent LLM Systems
 
-**SemAiOn** is an intelligent application that transforms unstructured materials science test data into standardized RDF (Resource Description Framework) and SHACL (Shapes Constraint Language) semantic models. The system uses advanced AI agents to automatically generate, optimize, and validate knowledge graphs specifically tailored for materials science data. Using Agent to re-build my [previous app](https://github.com/teman67/LLM_RDF_SHACL)
+**AgentSem** is an intelligent application that transforms unstructured materials science test data into standardized RDF (Resource Description Framework) and SHACL (Shapes Constraint Language) semantic models. The system uses advanced AI agents to automatically generate, optimize, and validate knowledge graphs specifically tailored for materials science data. Using Agent to re-build my [previous app](https://github.com/teman67/LLM_RDF_SHACL)
 
 [View live website here](https://agent-rdf-shacl-creator-0f2d13e6fb10.herokuapp.com/)
 
 ## 🎯 Overview
 
-SemAiOn bridges the gap between raw experimental data and structured semantic knowledge by:
+AgentSem bridges the gap between raw experimental data and structured semantic knowledge by:
 
 - Converting mechanical test reports into formal ontology structures
 - Generating compliant RDF representations of experimental data
@@ -47,7 +47,6 @@ SemAiOn bridges the gap between raw experimental data and structured semantic kn
 
 ```bash
 git clone <repository-url>
-cd semaion
 ```
 
 2. **Install dependencies**
@@ -187,7 +186,7 @@ graph TD
 ### File Structure
 
 ```
-semaion/
+AgentSem/
 ├── agent_streamlit_app.py    # Main Streamlit application
 ├── controller.py             # Pipeline orchestration
 ├── agents.py                 # Agent implementations
@@ -202,7 +201,7 @@ semaion/
 
 ### Supported Ontologies
 
-SemAiOn integrates with established semantic web standards:
+AgentSem integrates with established semantic web standards:
 
 - **Materials Ontologies**: MatWerk, EMMO, MatOnto
 - **Scientific Data**: OBI (Ontology for Biomedical Investigations)
@@ -279,7 +278,7 @@ SemAiOn integrates with established semantic web standards:
 
 ## 🤝 Contributing
 
-We welcome contributions to improve SemAiOn! Areas for contribution:
+We welcome contributions to improve AgentSem! Areas for contribution:
 
 - **New Agent Types**: Specialized agents for different materials science domains
 - **Ontology Extensions**: Support for additional domain ontologies
@@ -317,4 +316,4 @@ For issues, questions, or feature requests:
 
 ---
 
-**SemAiOn** - Transforming materials science data into knowledge graphs with AI-powered semantic modeling.
+**AgentSem** - Transforming materials science data into knowledge graphs with AI-powered semantic modeling.
