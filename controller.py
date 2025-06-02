@@ -1,4 +1,4 @@
-from agents import RDFGeneratorAgent, ValidatorAgent, CritiqueAgent, OntologyMapperAgent, CorrectionAgent
+from agents import RDFGeneratorAgent, ValidatorAgent, CritiqueAgent, OntologyMapperAgent, CorrectionAgent, OntologyMatcherAgent
 
 class SemanticPipelineAgent:
     def __init__(self, model_info, max_optimization=3, max_correction=3):
@@ -7,6 +7,7 @@ class SemanticPipelineAgent:
         self.critic = CritiqueAgent(model_info)
         self.ontology_mapper = OntologyMapperAgent(model_info)
         self.corrector = CorrectionAgent(model_info)
+        self.ontology_matcher = OntologyMatcherAgent()
         self.max_optimization = max_optimization
         self.max_correction = max_correction
 
@@ -55,4 +56,7 @@ class SemanticPipelineAgent:
         # Step 4: Ontology term suggestion
         ontology_mappings = self.ontology_mapper.run(user_input)
 
-        return rdf_code, shacl_code, conforms, report, ontology_mappings
+        # Step 5: Ontology matching analysis (NEW)
+        ontology_matches = self.ontology_matcher.run(rdf_code)
+
+        return rdf_code, shacl_code, conforms, report, ontology_mappings, ontology_matches
