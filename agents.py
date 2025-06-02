@@ -4,7 +4,6 @@ import streamlit as st
 from openai import OpenAI
 from anthropic import Anthropic
 import os
-from rdflib import Graph
 from pyshacl import validate
 import networkx as nx
 from pyvis.network import Network
@@ -14,6 +13,12 @@ import uuid
 import re
 import requests
 from dotenv import load_dotenv
+import os
+import glob
+from rdflib import Graph, Namespace, URIRef, Literal
+from typing import Dict, List, Tuple, Set
+import re
+from difflib import SequenceMatcher
 load_dotenv()
 
 class RDFGeneratorAgent:
@@ -306,3 +311,332 @@ class CorrectionAgent:
         
         # return call_llm(retry_prompt, "You are an expert at fixing SHACL validation errors in RDF data.", self.model_info)
         return extract_rdf_shacl_improved(llm_response)
+    
+
+class OntologyMatcherAgent:
+    def __init__(self, ontology_directory: str = "ontologies"):
+        """
+        Initialize the OntologyMatcherAgent
+        
+        Args:
+            ontology_directory: Directory containing .ttl and .owl ontology files
+        """
+        self.ontology_directory = ontology_directory
+        self.ontology_graphs = {}
+        self.ontology_terms = {}
+        self.load_ontologies()
+    
+    def load_ontologies(self):
+        """Load all ontology files from the specified directory"""
+        if not os.path.exists(self.ontology_directory):
+            st.warning(f"Ontology directory '{self.ontology_directory}' not found. Creating directory...")
+            os.makedirs(self.ontology_directory, exist_ok=True)
+            return
+        
+        # Find all .ttl and .owl files
+        ontology_files = []
+        ontology_files.extend(glob.glob(os.path.join(self.ontology_directory, "*.ttl")))
+        ontology_files.extend(glob.glob(os.path.join(self.ontology_directory, "*.owl")))
+        
+        if not ontology_files:
+            st.info(f"No ontology files (.ttl or .owl) found in '{self.ontology_directory}' directory.")
+            return
+        
+        for file_path in ontology_files:
+            try:
+                filename = os.path.basename(file_path)
+                graph = Graph()
+                
+                # Determine format based on file extension
+                if file_path.endswith('.ttl'):
+                    graph.parse(file_path, format="turtle")
+                elif file_path.endswith('.owl'):
+                    graph.parse(file_path, format="xml")
+                
+                self.ontology_graphs[filename] = graph
+                self.ontology_terms[filename] = self._extract_terms(graph)
+                
+                st.success(f"✅ Loaded ontology: {filename} ({len(self.ontology_terms[filename])} terms)")
+                
+            except Exception as e:
+                st.error(f"❌ Failed to load {filename}: {str(e)}")
+    
+    def _extract_terms(self, graph: Graph) -> Dict[str, Dict]:
+        """Extract terms (classes, properties, individuals) from an ontology graph"""
+        terms = {}
+        
+        # Extract classes
+        for subj in graph.subjects(predicate=URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"), 
+                                  object=URIRef("http://www.w3.org/2002/07/owl#Class")):
+            terms[str(subj)] = self._get_term_info(graph, subj, "Class")
+        
+        for subj in graph.subjects(predicate=URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"), 
+                                  object=URIRef("http://www.w3.org/2000/01/rdf-schema#Class")):
+            terms[str(subj)] = self._get_term_info(graph, subj, "Class")
+        
+        # Extract properties
+        for subj in graph.subjects(predicate=URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"), 
+                                  object=URIRef("http://www.w3.org/2002/07/owl#ObjectProperty")):
+            terms[str(subj)] = self._get_term_info(graph, subj, "ObjectProperty")
+        
+        for subj in graph.subjects(predicate=URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"), 
+                                  object=URIRef("http://www.w3.org/2002/07/owl#DatatypeProperty")):
+            terms[str(subj)] = self._get_term_info(graph, subj, "DatatypeProperty")
+        
+        for subj in graph.subjects(predicate=URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"), 
+                                  object=URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#Property")):
+            terms[str(subj)] = self._get_term_info(graph, subj, "Property")
+        
+        # Extract individuals/instances
+        for subj in graph.subjects():
+            if self._is_individual(graph, subj):
+                terms[str(subj)] = self._get_term_info(graph, subj, "Individual")
+        
+        return terms
+    
+    def _get_term_info(self, graph: Graph, term: URIRef, term_type: str) -> Dict:
+        """Get detailed information about a term"""
+        info = {
+            "type": term_type,
+            "uri": str(term),
+            "label": None,
+            "comment": None,
+            "local_name": self._extract_local_name(str(term))
+        }
+        
+        # Get label
+        for label in graph.objects(term, URIRef("http://www.w3.org/2000/01/rdf-schema#label")):
+            info["label"] = str(label)
+            break
+        
+        # Get comment/description
+        for comment in graph.objects(term, URIRef("http://www.w3.org/2000/01/rdf-schema#comment")):
+            info["comment"] = str(comment)
+            break
+        
+        return info
+    
+    def _is_individual(self, graph: Graph, subj: URIRef) -> bool:
+        """Check if a subject is an individual (not a class or property)"""
+        # Skip if it's a class or property
+        types_to_skip = [
+            URIRef("http://www.w3.org/2002/07/owl#Class"),
+            URIRef("http://www.w3.org/2000/01/rdf-schema#Class"),
+            URIRef("http://www.w3.org/2002/07/owl#ObjectProperty"),
+            URIRef("http://www.w3.org/2002/07/owl#DatatypeProperty"),
+            URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#Property")
+        ]
+        
+        for type_uri in types_to_skip:
+            if (subj, URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"), type_uri) in graph:
+                return False
+        
+        # Check if it has a type (indicating it's an individual)
+        for _ in graph.objects(subj, URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")):
+            return True
+        
+        return False
+    
+    def _extract_local_name(self, uri: str) -> str:
+        """Extract the local name from a URI"""
+        if "#" in uri:
+            return uri.split("#")[-1]
+        elif "/" in uri:
+            return uri.split("/")[-1]
+        return uri
+    
+    def _extract_rdf_terms(self, rdf_code: str) -> Set[str]:
+        """Extract terms used in the RDF code"""
+        try:
+            rdf_graph = Graph()
+            rdf_graph.parse(data=rdf_code, format="turtle")
+            
+            terms = set()
+            
+            # Extract all URIs from subjects, predicates, and objects
+            for subj, pred, obj in rdf_graph:
+                if isinstance(subj, URIRef):
+                    terms.add(str(subj))
+                if isinstance(pred, URIRef):
+                    terms.add(str(pred))
+                if isinstance(obj, URIRef):
+                    terms.add(str(obj))
+            
+            return terms
+            
+        except Exception as e:
+            st.error(f"Error parsing RDF: {str(e)}")
+            return set()
+    
+    def _calculate_similarity(self, term1: str, term2: str) -> float:
+        """Calculate similarity between two terms using multiple methods"""
+        # Extract local names for comparison
+        local1 = self._extract_local_name(term1).lower()
+        local2 = self._extract_local_name(term2).lower()
+        
+        # Exact match
+        if local1 == local2:
+            return 1.0
+        
+        # Sequence similarity
+        seq_sim = SequenceMatcher(None, local1, local2).ratio()
+        
+        # Check for substring matches
+        if local1 in local2 or local2 in local1:
+            substring_bonus = 0.3
+        else:
+            substring_bonus = 0.0
+        
+        # Check for common words (split by camelCase or underscores)
+        words1 = set(re.findall(r'[A-Z][a-z]*|[a-z]+', local1))
+        words2 = set(re.findall(r'[A-Z][a-z]*|[a-z]+', local2))
+        
+        if words1 and words2:
+            word_intersection = len(words1.intersection(words2))
+            word_union = len(words1.union(words2))
+            word_sim = word_intersection / word_union if word_union > 0 else 0
+        else:
+            word_sim = 0
+        
+        # Combine similarities
+        final_similarity = max(seq_sim, word_sim) + substring_bonus
+        return min(final_similarity, 1.0)
+    
+    def find_matches(self, rdf_code: str, similarity_threshold: float = 0.7) -> Dict:
+        """
+        Find matches between RDF terms and ontology terms
+        
+        Args:
+            rdf_code: The generated RDF code to analyze
+            similarity_threshold: Minimum similarity score for matches (0.0 to 1.0)
+            
+        Returns:
+            Dictionary containing match results
+        """
+        if not self.ontology_terms:
+            return {
+                "status": "no_ontologies",
+                "message": "No ontology files loaded. Please add .ttl or .owl files to the ontologies/ directory.",
+                "matches": []
+            }
+        
+        rdf_terms = self._extract_rdf_terms(rdf_code)
+        
+        if not rdf_terms:
+            return {
+                "status": "no_rdf_terms",
+                "message": "No terms extracted from RDF code.",
+                "matches": []
+            }
+        
+        all_matches = []
+        exact_matches = []
+        similar_matches = []
+        
+        for rdf_term in rdf_terms:
+            for ontology_file, ontology_terms in self.ontology_terms.items():
+                for onto_term_uri, onto_term_info in ontology_terms.items():
+                    similarity = self._calculate_similarity(rdf_term, onto_term_uri)
+                    
+                    if similarity >= similarity_threshold:
+                        match_info = {
+                            "rdf_term": rdf_term,
+                            "rdf_local_name": self._extract_local_name(rdf_term),
+                            "ontology_file": ontology_file,
+                            "ontology_term": onto_term_uri,
+                            "ontology_local_name": onto_term_info["local_name"],
+                            "ontology_type": onto_term_info["type"],
+                            "ontology_label": onto_term_info["label"],
+                            "ontology_comment": onto_term_info["comment"],
+                            "similarity_score": similarity
+                        }
+                        
+                        all_matches.append(match_info)
+                        
+                        if similarity == 1.0:
+                            exact_matches.append(match_info)
+                        else:
+                            similar_matches.append(match_info)
+        
+        # Sort matches by similarity score (descending)
+        all_matches.sort(key=lambda x: x["similarity_score"], reverse=True)
+        similar_matches.sort(key=lambda x: x["similarity_score"], reverse=True)
+        
+        return {
+            "status": "success",
+            "total_rdf_terms": len(rdf_terms),
+            "total_ontology_terms": sum(len(terms) for terms in self.ontology_terms.values()),
+            "total_matches": len(all_matches),
+            "exact_matches": len(exact_matches),
+            "similar_matches": len(similar_matches),
+            "matches": all_matches,
+            "similarity_threshold": similarity_threshold
+        }
+    
+    def run(self, rdf_code: str, similarity_threshold: float = 0.7) -> str:
+        """
+        Main method to run the ontology matching analysis
+        
+        Args:
+            rdf_code: The generated RDF code to analyze
+            similarity_threshold: Minimum similarity score for matches
+            
+        Returns:
+            Formatted string report of the analysis
+        """
+        results = self.find_matches(rdf_code, similarity_threshold)
+        
+        if results["status"] == "no_ontologies":
+            return results["message"]
+        
+        if results["status"] == "no_rdf_terms":
+            return results["message"]
+        
+        # Format the results as a readable report
+        report = []
+        report.append("# 🔍 Ontology Matching Analysis Report")
+        report.append("")
+        report.append(f"**Analysis Summary:**")
+        report.append(f"- RDF Terms Analyzed: {results['total_rdf_terms']}")
+        report.append(f"- Ontology Terms Available: {results['total_ontology_terms']}")
+        report.append(f"- Total Matches Found: {results['total_matches']}")
+        report.append(f"- Exact Matches: {results['exact_matches']}")
+        report.append(f"- Similar Matches: {results['similar_matches']}")
+        report.append(f"- Similarity Threshold: {results['similarity_threshold']}")
+        report.append("")
+        
+        if results["matches"]:
+            report.append("## 📋 Detailed Match Results")
+            report.append("")
+            
+            current_rdf_term = ""
+            for match in results["matches"]:
+                if match["rdf_term"] != current_rdf_term:
+                    current_rdf_term = match["rdf_term"]
+                    report.append(f"### 🎯 RDF Term: `{match['rdf_local_name']}`")
+                    report.append(f"*Full URI: {match['rdf_term']}*")
+                    report.append("")
+                
+                match_type = "🎯 **EXACT MATCH**" if match["similarity_score"] == 1.0 else f"🔍 **SIMILAR MATCH** ({match['similarity_score']:.2f})"
+                
+                report.append(f"**{match_type}**")
+                report.append(f"- **Ontology File:** {match['ontology_file']}")
+                report.append(f"- **Ontology Term:** `{match['ontology_local_name']}`")
+                report.append(f"- **Term Type:** {match['ontology_type']}")
+                
+                if match["ontology_label"]:
+                    report.append(f"- **Label:** {match['ontology_label']}")
+                
+                if match["ontology_comment"]:
+                    report.append(f"- **Description:** {match['ontology_comment'][:200]}{'...' if len(match['ontology_comment']) > 200 else ''}")
+                
+                report.append(f"- **Full URI:** {match['ontology_term']}")
+                report.append("")
+        else:
+            report.append("## ❌ No Matches Found")
+            report.append("")
+            report.append("No terms in the generated RDF matched any terms in the loaded ontologies.")
+            report.append(f"Consider lowering the similarity threshold (currently {results['similarity_threshold']}) or ")
+            report.append("ensuring that relevant ontology files are placed in the ontologies/ directory.")
+        
+        return "\n".join(report)
