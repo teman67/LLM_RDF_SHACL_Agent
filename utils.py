@@ -123,5 +123,18 @@ def call_llm(prompt, system_prompt, model_info):
             "temperature": temperature,
             "stream": False
         }
-        response = requests.post(f"{endpoint}/api/chat", json=data)
-        return response.json()["message"]["content"]
+        try:
+            response = requests.post(f"{endpoint}/api/chat", json=data)
+            response.raise_for_status()  # raise error if status code is 4xx/5xx
+
+            json_data = response.json()
+            if "message" in json_data and "content" in json_data["message"]:
+                return json_data["message"]["content"]
+            elif "error" in json_data:
+                raise ValueError(f"Ollama API error: {json_data['error']}")
+            else:
+                raise ValueError("Unexpected Ollama response format.")
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to call Ollama API: {str(e)}")
+    return response.json()["message"]["content"]
