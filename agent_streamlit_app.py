@@ -120,6 +120,22 @@ def validate_turtle_syntax(turtle_text):
         return True, "Valid syntax"
     except Exception as e:
         return False, str(e)
+    
+def validate_api_key(provider, api_key):
+    try:
+        if provider == "OpenAI":
+            client = openai.OpenAI(api_key=api_key)
+            client.models.list()
+        elif provider == "Anthropic":
+            client = Anthropic(api_key=api_key)
+            client.models.list()
+        return True, ""
+    except openai.AuthenticationError:
+        return False, "❌ **Invalid OpenAI API Key**\n\nPlease verify your API key at https://platform.openai.com/account/api-keys"
+    except AnthropicAuthError:
+        return False, "❌ **Invalid Anthropic API Key**\n\nPlease verify your API key at https://console.anthropic.com/settings/keys"
+    except Exception as e:
+        return False, f"Unexpected error while validating API key: {str(e)}"
 
 if st.button("Generate RDF & SHACL"):
 
@@ -143,8 +159,15 @@ if st.button("Generate RDF & SHACL"):
                 "api_key": api_key,
                 "endpoint": endpoint
             }
+            # 🔐 Validate API key
+            if provider in ["OpenAI", "Anthropic"]:
+                valid, message = validate_api_key(provider, api_key)
+                if not valid:
+                    st.error(f"❌ {message}")
+                    st.stop()
 
             agent = SemanticPipelineAgent(model_info, max_opt, max_corr)
+
             # Show generation process in an expander to keep it organized
             with st.expander("🛠️ Generation & Optimization Process", expanded=False):
                 st.subheader("Initial Generation")
