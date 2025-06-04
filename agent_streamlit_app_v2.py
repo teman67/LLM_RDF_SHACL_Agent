@@ -380,20 +380,6 @@ if st.button("Generate RDF & SHACL"):
                 else:
                     st.warning("⚠️ Validation failed due to syntax or other errors.")
 
-            # Add debugging information for developers
-            if st.sidebar.checkbox("🔧 Show Debug Info", help="Show technical details for debugging"):
-                with st.expander("🔧 Debug Information"):
-                    st.markdown("**Error Pattern Analysis:**")
-                    if previous_core_errors:
-                        from collections import Counter
-                        error_counts = Counter(previous_core_errors)
-                        for error, count in error_counts.items():
-                            st.markdown(f"- `{error}`: occurred {count} time(s)")
-                    
-                    st.markdown("**Correction Attempt Summary:**")
-                    st.markdown(f"- Total attempts: {correction_attempt}")
-                    st.markdown(f"- Consecutive failures: {consecutive_failures}")
-                    st.markdown(f"- Final validation status: {'PASSED' if valid else 'FAILED'}")
                 
         # FINAL RESULTS SECTION - Make this very clear
         st.markdown("---")
@@ -459,37 +445,7 @@ if st.button("Generate RDF & SHACL"):
                 st.error(f"Error during ontology matching: {str(e)}")
                 st.info("💡 **Tip:** Make sure to place your ontology files (.ttl or .owl) in an 'ontologies/' directory in the same location as this application.")
 
-        # Add instructions for users
-        st.sidebar.info("""
-        📁 **Ontology Files Setup:**
-
-        1. Create an 'ontologies/' directory
-        2. Place your .ttl or .owl files there
-        3. The app will automatically load them for matching analysis
-        """)
-
-        # Add file uploader for ontology files in sidebar
-        st.sidebar.header("📁 Upload Ontology Files")
-        uploaded_ontology = st.sidebar.file_uploader(
-            "Upload ontology files", 
-            type=["ttl", "owl"], 
-            accept_multiple_files=True,
-            help="Upload .ttl or .owl ontology files for matching analysis"
-        )
-        if uploaded_ontology:
-            # Create ontologies directory if it doesn't exist
-            os.makedirs("ontologies", exist_ok=True)
-            
-            for file in uploaded_ontology:
-                file_path = os.path.join("ontologies", file.name)
-                with open(file_path, "wb") as f:
-                    f.write(file.getbuffer())
-                st.sidebar.success(f"✅ Uploaded: {file.name}")
-            
-            # Reload the ontology matcher to include new files
-            agent.ontology_matcher = OntologyMatcherAgent()
-            st.sidebar.info("🔄 Ontology files loaded. Run the pipeline to see matching results.")
-
+        # Store original RDF/SHACL codes for comparison later
         original_rdf = rdf_code
         original_shacl = shacl_code
 
