@@ -1,1 +1,1 @@
-web: sh setup.sh && streamlit run ./agent_streamlit_app_v1.py
+web: sh setup.sh && streamlit run ./agent_streamlit_app_v2.py
