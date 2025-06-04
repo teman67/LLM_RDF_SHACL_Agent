@@ -204,12 +204,12 @@ flowchart TD
     X --> Z
     U --> Z
 
-    %% Styling with larger fonts
-    classDef agent fill:#e1f5fe,stroke:#01579b,stroke-width:3px,font-size:16px,font-weight:bold
-    classDef process fill:#f3e5f5,stroke:#4a148c,stroke-width:3px,font-size:14px
-    classDef decision fill:#fff3e0,stroke:#e65100,stroke-width:3px,font-size:14px,font-weight:bold
-    classDef output fill:#e8f5e8,stroke:#2e7d32,stroke-width:3px,font-size:14px
-    classDef input fill:#fff8e1,stroke:#f57f17,stroke-width:3px,font-size:16px,font-weight:bold
+    %% Styling with black font color
+    classDef agent fill:#e1f5fe,stroke:#01579b,stroke-width:3px,font-size:26px,font-weight:bold,color:#000000
+    classDef process fill:#f3e5f5,stroke:#4a148c,stroke-width:3px,font-size:24px,color:#000000
+    classDef decision fill:#fff3e0,stroke:#e65100,stroke-width:3px,font-size:24px,font-weight:bold,color:#000000
+    classDef output fill:#e8f5e8,stroke:#2e7d32,stroke-width:3px,font-size:24px,color:#000000
+    classDef input fill:#fff8e1,stroke:#f57f17,stroke-width:3px,font-size:26px,font-weight:bold,color:#000000
 
     class B,F,H,I,M agent
     class C,J,P,Q,R,W,Y process
