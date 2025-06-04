@@ -148,7 +148,19 @@ if st.button("Generate RDF & SHACL"):
             # Show generation process in an expander to keep it organized
             with st.expander("🛠️ Generation & Optimization Process", expanded=False):
                 st.subheader("Initial Generation")
-                rdf_code, shacl_code = agent.generator.run(user_input)
+                try:
+                    rdf_code, shacl_code = agent.generator.run(user_input)
+                except openai.AuthenticationError:
+                    st.error("❌ **Invalid OpenAI API Key**\n\nPlease verify your API key at https://platform.openai.com/account/api-keys")
+                    st.stop()
+                except AnthropicAuthError:
+                    st.error("❌ **Invalid Anthropic API Key**\n\nPlease verify your API key at https://console.anthropic.com/settings/keys")
+                    st.stop()
+                except Exception as e:
+                    st.error("❌ **An unexpected error occurred**")
+                    with st.expander("🔧 Show error details"):
+                        st.code(str(e))
+                    st.stop()
                 st.markdown("**Initial RDF Output:**")
                 st.code(rdf_code, language="turtle")
                 st.markdown("**Initial SHACL Output:**")
