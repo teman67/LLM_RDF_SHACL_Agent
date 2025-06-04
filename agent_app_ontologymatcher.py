@@ -129,6 +129,31 @@ def validate_turtle_syntax(turtle_text):
     except Exception as e:
         return False, str(e)
 
+def validate_api_key(provider, api_key, endpoint=None):
+    try:
+        if provider == "OpenAI":
+            client = openai.OpenAI(api_key=api_key)
+            client.models.list()
+        elif provider == "Anthropic":
+            client = Anthropic(api_key=api_key)
+            client.models.list()
+        elif provider == "Ollama":
+            # For Ollama, we can just check if the endpoint is reachable
+            if not endpoint:
+                raise ValueError("No endpoint provided for Ollama.")
+            response = requests.get(f"{endpoint}/v1/models", timeout=5)
+            if response.status_code != 200:
+                raise Exception(f"Ollama responded with status code {response.status_code}")
+        return True, ""
+    except openai.AuthenticationError:
+        return False, "❌ **Invalid OpenAI API Key**\n\nPlease verify your API key at https://platform.openai.com/account/api-keys"
+    except AnthropicAuthError:
+        return False, "❌ **Invalid Anthropic API Key**\n\nPlease verify your API key at https://console.anthropic.com/settings/keys"
+    except requests.exceptions.RequestException as e:
+        return False, f"❌ **Cannot Connect to Ollama**\n\nFailed to connect to Ollama at `{endpoint}`. Please make sure Ollama is running and accessible. Error: {str(e)}"
+    except Exception as e:
+        return False, f"Unexpected error while validating API key: {str(e)}"
+
 if st.button("Generate RDF & SHACL"):
 
      # Check for input first
@@ -152,9 +177,16 @@ if st.button("Generate RDF & SHACL"):
                 "endpoint": endpoint
             }
 
+            # 🔐 Validate API key
+            if provider in ["OpenAI", "Anthropic", "Ollama"]:
+                valid, message = validate_api_key(provider, api_key, endpoint)
+                if not valid:
+                    st.error(f"❌ {message}")
+                    st.stop()
+                    
             agent = SemanticPipelineAgent(model_info, max_opt, max_corr)
 
-            agent.ontology_matcher = OntologyMatcherAgent()
+            # agent.ontology_matcher = OntologyMatcherAgent()
             # Show generation process in an expander to keep it organized
             with st.expander("🛠️ Generation & Optimization Process", expanded=False):
                 st.subheader("Initial Generation")
@@ -447,6 +479,150 @@ if st.button("Generate RDF & SHACL"):
             agent.ontology_matcher = OntologyMatcherAgent()
             st.sidebar.info("🔄 Ontology files loaded. Run the pipeline to see matching results.")
 
+        original_rdf = rdf_code
+        original_shacl = shacl_code
+
+        # NEW: Apply Ontology Term Replacements
+        st.subheader("🔄 Ontology Term Replacement")
+        st.markdown("**Applying exact matches from ontology analysis:**")
+
+        with st.spinner("Applying ontology term replacements..."):
+            try:
+                # Apply replacements
+                replaced_rdf, replaced_shacl, replacement_report, replacement_validation = agent.apply_ontology_replacements(
+                    rdf_code, shacl_code, similarity_threshold
+                )
+                
+                # Show replacement report
+                st.markdown(replacement_report)
+                
+                # If replacements were made, update the final codes and validate
+                if replacement_validation and replacement_validation["replacements_made"] > 0:
+                    st.success(f"✅ Applied {replacement_validation['replacements_made']} exact term replacements!")
+                    
+                    # Update the final codes
+                    rdf_code = replaced_rdf
+                    shacl_code = replaced_shacl
+                    
+                    # Show validation results for replaced version
+                    if replacement_validation["conforms"]:
+                        st.success("✅ Replaced RDF/SHACL passes validation!")
+                        valid = True  # Update validation status
+                    else:
+                        st.warning("⚠️ Replaced RDF/SHACL has validation issues:")
+                        with st.expander("View Replacement Validation Report"):
+                            st.code(replacement_validation["report"])
+                        
+                        # Offer to use original or replaced version
+                        use_replaced = st.radio(
+                            "Which version would you like to use as final?",
+                            ["Use replaced version (with ontology terms)", "Use original version (before replacement)"],
+                            index=0
+                        )
+                        
+                        if use_replaced == "Use original version (before replacement)":
+                            # Restore original codes
+                            rdf_code = replaced_rdf  # This should be swapped back to original
+                            shacl_code = replaced_shacl  # This should be swapped back to original
+                            st.info("Using original version as final output.")
+                else:
+                    st.info("ℹ️ No exact matches found for replacement. Using original RDF/SHACL.")
+                    
+            except Exception as e:
+                st.error(f"Error during ontology replacement: {str(e)}")
+                st.info("Using original RDF/SHACL without replacements.")
+
+        if replacement_validation and replacement_validation["replacements_made"] > 0:
+            st.subheader("📊 Before/After Comparison")
+            
+            # Create tabs for comparison
+            tab1, tab2 = st.tabs(["🔍 RDF Comparison", "🛡️ SHACL Comparison"])
+            
+            with tab1:
+                st.markdown("**RDF Changes:**")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("*Before Replacement:*")
+                    st.code(rdf_code if 'original_rdf' not in locals() else original_rdf, language="turtle")
+                
+                with col2:
+                    st.markdown("*After Replacement:*")
+                    st.code(replaced_rdf, language="turtle")
+            
+            with tab2:
+                st.markdown("**SHACL Changes:**")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("*Before Replacement:*")
+                    st.code(shacl_code if 'original_shacl' not in locals() else original_shacl, language="turtle")
+                
+                with col2:
+                    st.markdown("*After Replacement:*")
+                    st.code(replaced_shacl, language="turtle")
+        # Replace the existing FINAL RESULTS SECTION with this updated version
+
+        # FINAL RESULTS SECTION - Make this very clear
+        st.markdown("---")
+        st.header("🎯 FINAL VALIDATED RESULTS")
+
+        # Show replacement status
+        replacement_status = ""
+        if 'replacement_validation' in locals() and replacement_validation and replacement_validation["replacements_made"] > 0:
+            replacement_status = f" (with {replacement_validation['replacements_made']} ontology term replacements)"
+
+        # Validation status box
+        if valid:
+            st.success(f"✅ **STATUS: VALIDATION PASSED{replacement_status}** - These are your final, validated RDF and SHACL files.")
+        else:
+            st.error(f"❌ **STATUS: VALIDATION FAILED{replacement_status}** - These files contain validation errors.")
+
+        # Show replacement summary if applicable
+        if 'replacement_validation' in locals() and replacement_validation and replacement_validation["replacements_made"] > 0:
+            st.info(f"🔄 **Ontology Integration:** {replacement_validation['replacements_made']} terms were replaced with ontology equivalents")
+
+        # Final RDF output with clear labeling
+        st.subheader("📄 Final RDF Output")
+        st.markdown("**This is your final RDF file" + (" (with ontology term replacements)" if replacement_status else "") + ":**")
+        st.code(rdf_code, language="turtle")
+
+        # Final SHACL output with clear labeling  
+        st.subheader("🛡️ Final SHACL Output")
+        st.markdown("**This is your final SHACL shapes file" + (" (with ontology term replacements)" if replacement_status else "") + ":**")
+        st.code(shacl_code, language="turtle")
+
+        # Final validation report
+        st.subheader("📋 Final Validation Report")
+        with st.expander("View Final Validation Details", expanded=valid is False):
+            if 'replacement_validation' in locals() and replacement_validation and replacement_validation["replacements_made"] > 0:
+                st.markdown("**Validation of final version (after ontology term replacement):**")
+                st.code(replacement_validation["report"] if not replacement_validation["conforms"] else "All SHACL constraints satisfied.")
+            else:
+                st.code(report)
+
+        # Download buttons with clear labeling
+        st.subheader("⬇️ Download Final Files")
+        col1, col2 = st.columns(2)
+        with col1:
+            suffix = "with_ontology_terms" if replacement_status else ("validated" if valid else "with_errors")
+            download_filename_rdf = f"final_rdf_{suffix}.ttl"
+            st.download_button(
+                "📥 Download Final RDF", 
+                rdf_code, 
+                download_filename_rdf, 
+                "text/turtle",
+                help=f"Download the final RDF file {replacement_status}"
+            )
+        with col2:
+            download_filename_shacl = f"final_shacl_{suffix}.ttl"
+            st.download_button(
+                "📥 Download Final SHACL", 
+                shacl_code, 
+                download_filename_shacl, 
+                "text/turtle",
+                help=f"Download the final SHACL file {replacement_status}"
+            )
         # Visualize FINAL RDF
         st.subheader("🌐 Final RDF Graph Visualization")
         st.markdown("**Visualization of your final RDF data:**")
