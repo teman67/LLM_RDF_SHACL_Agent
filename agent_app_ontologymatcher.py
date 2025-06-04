@@ -18,8 +18,80 @@ import requests
 import openai
 from anthropic import AuthenticationError as AnthropicAuthError
 from agents import OntologyMatcherAgent
+import hashlib
+import re
+
 
 load_dotenv()
+
+
+def extract_core_error(report):
+    """
+    Extract the core error message, removing variable elements like timestamps, 
+    line numbers, and URIs that might change between attempts
+    """
+    # Remove common variable elements
+    cleaned = re.sub(r'line \d+', 'line X', report)
+    cleaned = re.sub(r'column \d+', 'column X', cleaned)
+    cleaned = re.sub(r'n\d+', 'nX', cleaned)  # Remove blank node identifiers
+    cleaned = re.sub(r'#\w+', '#X', cleaned)  # Remove URI fragments
+    cleaned = re.sub(r'http://[^\s]+', 'http://X', cleaned)  # Remove full URIs
+    cleaned = re.sub(r'\d{4}-\d{2}-\d{2}', 'DATE', cleaned)  # Remove dates
+    cleaned = re.sub(r'\d+\.\d+', 'NUM', cleaned)  # Remove decimal numbers
+    
+    # Extract key error patterns
+    error_patterns = [
+        r'Constraint Violation',
+        r'MinCount',
+        r'MaxCount', 
+        r'DataType',
+        r'NodeKind',
+        r'Class',
+        r'Bad syntax',
+        r'Expected',
+        r'objectList expected',
+        r'Missing',
+        r'Invalid'
+    ]
+    
+    core_errors = []
+    for pattern in error_patterns:
+        matches = re.findall(pattern, cleaned, re.IGNORECASE)
+        core_errors.extend(matches)
+    
+    return ' '.join(core_errors).lower()
+
+def is_syntax_error(report):
+    """
+    More precise detection of actual Turtle syntax errors vs SHACL validation errors
+    """
+    syntax_indicators = [
+        "Bad syntax at line",
+        "objectList expected",
+        "Expected one of",
+        "Unexpected end of file",
+        "Invalid escape sequence",
+        "Malformed URI",
+        "Invalid character"
+    ]
+    
+    # Must have syntax indicator AND not be a SHACL constraint violation
+    has_syntax_indicator = any(indicator in report for indicator in syntax_indicators)
+    has_shacl_violation = "Constraint Violation" in report or "sh:" in report
+    
+    return has_syntax_indicator and not has_shacl_violation
+
+def should_retry_correction(report, previous_core_errors, max_same_error=2):
+    """
+    Determine if we should retry correction based on error patterns
+    """
+    core_error = extract_core_error(report)
+    
+    # Count how many times we've seen this core error
+    same_error_count = previous_core_errors.count(core_error)
+    
+    return same_error_count < max_same_error
+
 
 
 st.set_page_config(page_title="AgentSem", layout="wide")
@@ -232,157 +304,243 @@ if st.button("Generate RDF & SHACL"):
                 valid = False
                 report = f"Syntax errors prevent SHACL validation:\nRDF: {rdf_syntax_error if not rdf_syntax_valid else 'OK'}\nSHACL: {shacl_syntax_error if not shacl_syntax_valid else 'OK'}"
 
-            # valid, report = agent.validator.run(rdf_code, shacl_code)
-            
             correction_attempt = 0
             correction_history = []
-            previous_errors = set()  # Track previous errors to detect loops
-            
+            previous_core_errors = []  # Track core error patterns instead of full reports
+            consecutive_failures = 0  # Track consecutive correction failures
+
             while not valid and correction_attempt < max_corr:
                 correction_attempt += 1
-
-                # Create a hash of the current error to detect if we're stuck in a loop
-                error_hash = hash(report)
-
-                if error_hash in previous_errors:
-                    st.error(f"🔄 **Correction Loop Detected!** The same error keeps occurring after correction attempt {correction_attempt}.")
-                    st.warning("The AI corrector is unable to fix this specific error. Manual intervention may be required.")
+                
+                # Extract core error for loop detection
+                core_error = extract_core_error(report)
+                
+                # More sophisticated retry logic
+                if not should_retry_correction(report, previous_core_errors, max_same_error=2):
+                    st.warning(f"🔄 **Similar Error Pattern Detected** after {correction_attempt-1} attempts.")
+                    st.info("💡 **Trying alternative correction approach...**")
                     
-                    # Try one more basic syntax cleanup
-                    st.info("🛠️ Attempting emergency syntax cleanup...")
-                    rdf_code, shacl_code = basic_syntax_cleanup(rdf_code, shacl_code)
-                    
-                    # Check if cleanup helped
-                    rdf_syntax_valid, rdf_syntax_error = validate_turtle_syntax(rdf_code)
-                    shacl_syntax_valid, shacl_syntax_error = validate_turtle_syntax(shacl_code)
-                    
-                    if rdf_syntax_valid and shacl_syntax_valid:
-                        valid, report = agent.validator.run(rdf_code, shacl_code)
-                        if valid:
-                            st.success("✨ Emergency cleanup successful!")
+                    # Try one more time with additional context
+                    if consecutive_failures < 2:  # Allow 2 alternative attempts
+                        consecutive_failures += 1
+                        st.info(f"🛠️ Alternative correction attempt #{consecutive_failures}")
+                        
+                        # Add more context to help the LLM understand the pattern
+                        enhanced_report = f"""
+                        REPEATED ERROR PATTERN DETECTED: {core_error}
+                        
+                        Previous attempts have failed to fix this issue. Please:
+                        1. Focus on the ROOT CAUSE of this specific error type
+                        2. Consider completely different approaches to modeling this data
+                        3. Simplify the constraints if they are too restrictive
+                        4. Check for fundamental modeling issues
+                        
+                        Original error report:
+                        {report}
+                        """
+                        
+                        try:
+                            rdf_code, shacl_code = agent.corrector.run(rdf_code, shacl_code, enhanced_report)
+                            rdf_code, shacl_code = basic_syntax_cleanup(rdf_code, shacl_code)
+                            
+                            # Validate syntax first
+                            rdf_syntax_valid, rdf_syntax_error = validate_turtle_syntax(rdf_code)
+                            shacl_syntax_valid, shacl_syntax_error = validate_turtle_syntax(shacl_code)
+                            
+                            if rdf_syntax_valid and shacl_syntax_valid:
+                                valid, report = agent.validator.run(rdf_code, shacl_code)
+                                if valid:
+                                    st.success("✨ Alternative correction approach successful!")
+                                    break
+                            else:
+                                valid = False
+                                report = f"Syntax errors after correction:\nRDF: {rdf_syntax_error if not rdf_syntax_valid else 'OK'}\nSHACL: {shacl_syntax_error if not shacl_syntax_valid else 'OK'}"
+                                
+                        except Exception as e:
+                            st.error(f"Error during alternative correction: {str(e)}")
                             break
-                    
-                    # If still failing, break the loop
-                    st.error("❌ Unable to automatically fix the syntax errors. Breaking correction loop.")
-                    break
+                    else:
+                        st.error("❌ Multiple correction approaches failed. Breaking correction loop.")
+                        st.info("""
+                        **💡 Suggestions for manual review:**
+                        - The error pattern suggests a fundamental modeling issue
+                        - Consider simplifying the SHACL constraints
+                        - Review the RDF structure for compliance with expected patterns
+                        - Check if the input data matches the intended semantic model
+                        """)
+                        break
                 
-                previous_errors.add(error_hash)
-
-                st.warning(f"❌ SHACL Validation Failed. Attempting correction #{correction_attempt}/{max_corr}")
-
-                # Show the specific error pattern for syntax issues
-                if "Bad syntax" in report or "objectList expected" in report:
-                    st.info("🔍 **Detected Syntax Error** - This appears to be a Turtle syntax issue rather than a SHACL validation issue.")
-    
+                # Track the core error pattern
+                previous_core_errors.append(core_error)
                 
-                # Store correction history
+                # Determine error type for better user feedback
+                error_type = 'syntax' if is_syntax_error(report) else 'validation'
+                
+                if error_type == 'syntax':
+                    st.warning(f"🔤 Syntax Error Detected. Attempting correction #{correction_attempt}/{max_corr}")
+                else:
+                    st.warning(f"📋 SHACL Validation Failed. Attempting correction #{correction_attempt}/{max_corr}")
+                
+                # Store correction history with better categorization
                 correction_history.append({
                     'attempt': correction_attempt,
                     'rdf': rdf_code,
                     'shacl': shacl_code,
                     'report': report,
-                    'error_type': 'syntax' if 'Bad syntax' in report else 'validation'
+                    'error_type': error_type,
+                    'core_error': core_error
                 })
                 
+                # Show validation report with better formatting
                 with st.expander(f"📋 Validation Report (Attempt {correction_attempt})", expanded=False):
+                    st.markdown(f"**Error Type:** {error_type.title()}")
+                    st.markdown(f"**Core Error Pattern:** `{core_error}`")
                     st.code(report)
-
-                    # Show the problematic line if it's a syntax error
-                    if "Bad syntax" in report and "line" in report:
+                    
+                    # Show problematic sections for syntax errors
+                    if error_type == 'syntax' and "line" in report:
                         try:
-                            # Extract line number
                             line_match = re.search(r'line (\d+)', report)
                             if line_match:
                                 line_num = int(line_match.group(1))
                                 lines = rdf_code.split('\n')
                                 if line_num <= len(lines):
                                     st.markdown(f"**Problematic line {line_num}:**")
-                                    st.code(lines[line_num-1])
+                                    # Show context around the problematic line
+                                    start_line = max(0, line_num - 3)
+                                    end_line = min(len(lines), line_num + 2)
+                                    context = '\n'.join([f"{i+1:3d}: {lines[i]}" for i in range(start_line, end_line)])
+                                    st.code(context)
                         except:
                             pass
-
-                # Try correction
+                
+                # Attempt correction with progress feedback
                 try:
-                    rdf_code, shacl_code = agent.corrector.run(rdf_code, shacl_code, report)
-                    
-                    # Apply basic cleanup after correction
-                    rdf_code, shacl_code = basic_syntax_cleanup(rdf_code, shacl_code)
-                    
-                    # Validate syntax first before SHACL validation
-                    rdf_syntax_valid, rdf_syntax_error = validate_turtle_syntax(rdf_code)
-                    shacl_syntax_valid, shacl_syntax_error = validate_turtle_syntax(shacl_code)
-                    
-                    if rdf_syntax_valid and shacl_syntax_valid:
-                        valid, report = agent.validator.run(rdf_code, shacl_code)
-                    else:
-                        valid = False
-                        report = f"Syntax errors after correction:\nRDF: {rdf_syntax_error if not rdf_syntax_valid else 'OK'}\nSHACL: {shacl_syntax_error if not shacl_syntax_valid else 'OK'}"
+                    with st.spinner(f"Correcting {error_type} error (attempt {correction_attempt})..."):
+                        rdf_code, shacl_code = agent.corrector.run(rdf_code, shacl_code, report)
                         
+                        # Apply cleanup after correction
+                        rdf_code, shacl_code = basic_syntax_cleanup(rdf_code, shacl_code)
+                        
+                        # Validate syntax first before SHACL validation
+                        rdf_syntax_valid, rdf_syntax_error = validate_turtle_syntax(rdf_code)
+                        shacl_syntax_valid, shacl_syntax_error = validate_turtle_syntax(shacl_code)
+                        
+                        if rdf_syntax_valid and shacl_syntax_valid:
+                            valid, report = agent.validator.run(rdf_code, shacl_code)
+                            if valid:
+                                consecutive_failures = 0  # Reset failure counter on success
+                        else:
+                            valid = False
+                            report = f"Syntax errors after correction:\nRDF: {rdf_syntax_error if not rdf_syntax_valid else 'OK'}\nSHACL: {shacl_syntax_error if not shacl_syntax_valid else 'OK'}"
+                            
                 except Exception as e:
-                    st.error(f"Error during correction: {str(e)}")
-                    break
-                # rdf_code, shacl_code = agent.corrector.run(rdf_code, shacl_code, report)
-                # valid, report = agent.validator.run(rdf_code, shacl_code)
+                    st.error(f"Error during correction attempt {correction_attempt}: {str(e)}")
+                    consecutive_failures += 1
+                    if consecutive_failures >= 2:
+                        st.error("Multiple correction failures. Stopping correction process.")
+                        break
 
-            # Show correction history if there were corrections
-            # if correction_history:
-            #     with st.expander("🔧 Correction History", expanded=False):
-            #         for correction in correction_history:
-            #             st.markdown(f"**Correction Attempt {correction['attempt']}:**")
-            #             col1, col2 = st.columns(2)
-            #             with col1:
-            #                 st.markdown("*RDF before correction:*")
-            #                 st.code(correction['rdf'], language="turtle")
-            #             with col2:
-            #                 st.markdown("*SHACL before correction:*")
-            #                 st.code(correction['shacl'], language="turtle")
-            # Show correction history if there were corrections
+            # Enhanced correction history display
             if correction_history:
-                with st.expander("🔧 Correction History", expanded=False):
-                    for correction in correction_history:
-                        error_type_icon = "🔤" if correction['error_type'] == 'syntax' else "📋"
-                        st.markdown(f"**{error_type_icon} Correction Attempt {correction['attempt']} ({correction['error_type'].title()} Error):**")
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.markdown("*RDF before correction:*")
-                            st.code(correction['rdf'], language="turtle")
-                        with col2:
-                            st.markdown("*SHACL before correction:*")
-                            st.code(correction['shacl'], language="turtle")
-                        
-                        st.markdown("*Error Report:*")
-                        st.code(correction['report'])
+                with st.expander("🔧 Detailed Correction History", expanded=False):
+                    # Group by error type for better organization
+                    syntax_corrections = [c for c in correction_history if c['error_type'] == 'syntax']
+                    validation_corrections = [c for c in correction_history if c['error_type'] == 'validation']
+                    
+                    if syntax_corrections:
+                        st.markdown("### 🔤 Syntax Error Corrections")
+                        for correction in syntax_corrections:
+                            st.markdown(f"**Attempt {correction['attempt']}** - Core Error: `{correction['core_error']}`")
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.markdown("*RDF before correction:*")
+                                st.code(correction['rdf'][:500] + "..." if len(correction['rdf']) > 500 else correction['rdf'], language="turtle")
+                            with col2:
+                                st.markdown("*SHACL before correction:*")
+                                st.code(correction['shacl'][:500] + "..." if len(correction['shacl']) > 500 else correction['shacl'], language="turtle")
+                    
+                    if validation_corrections:
+                        st.markdown("### 📋 Validation Error Corrections")
+                        for correction in validation_corrections:
+                            st.markdown(f"**Attempt {correction['attempt']}** - Core Error: `{correction['core_error']}`")
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.markdown("*RDF before correction:*")
+                                st.code(correction['rdf'][:500] + "..." if len(correction['rdf']) > 500 else correction['rdf'], language="turtle")
+                            with col2:
+                                st.markdown("*SHACL before correction:*")
+                                st.code(correction['shacl'][:500] + "..." if len(correction['shacl']) > 500 else correction['shacl'], language="turtle")
 
-            # Final validation status
-            # if valid:
-            #     st.success("✅ Final Validation: PASSED")
-            # else:
-            #     st.error("❌ Final Validation: FAILED")
-            #     st.warning("⚠️ The generated RDF/SHACL did not pass validation after all correction attempts.")
-
-            # Final validation status with more detailed feedback
+            # Enhanced final validation status
             if valid:
                 st.success("✅ Final Validation: PASSED")
                 if correction_attempt > 0:
                     st.info(f"🎉 Successfully corrected after {correction_attempt} attempt(s)!")
+                    
+                    # Show what types of errors were fixed
+                    error_types_fixed = list(set([c['error_type'] for c in correction_history]))
+                    if len(error_types_fixed) == 1:
+                        st.info(f"✨ Fixed {error_types_fixed[0]} errors")
+                    else:
+                        st.info(f"✨ Fixed multiple error types: {', '.join(error_types_fixed)}")
             else:
                 st.error("❌ Final Validation: FAILED")
                 if correction_attempt >= max_corr:
                     st.warning(f"⚠️ The generated RDF/SHACL did not pass validation after {max_corr} correction attempts.")
-                    # Provide specific guidance based on error type
-                    if "Bad syntax" in report:
+                    
+                    # Provide specific guidance based on the final error pattern
+                    final_core_error = extract_core_error(report)
+                    if is_syntax_error(report):
                         st.info("""
-                        **💡 Syntax Error Detected:** The issue appears to be malformed Turtle syntax rather than SHACL validation.
-                        Common fixes:
-                        - Check for malformed quotes or special characters
-                        - Ensure proper URI formatting
+                        **💡 Persistent Syntax Error Detected:**
+                        
+                        The issue appears to be malformed Turtle syntax. Common solutions:
+                        - Check for unescaped quotes or special characters
+                        - Ensure proper URI formatting (use <> for full URIs)
                         - Verify all statements end with proper punctuation (. ; ,)
+                        - Check for missing prefixes or namespace declarations
+                        """)
+                    elif "constraint violation" in final_core_error:
+                        st.info(f"""
+                        **💡 Persistent SHACL Constraint Violation:**
+                        
+                        Core error pattern: `{final_core_error}`
+                        
+                        Possible solutions:
+                        - Review if the SHACL constraints are too restrictive for your data
+                        - Check if the RDF structure matches the expected semantic model  
+                        - Consider simplifying complex constraints
+                        - Verify that required properties are present in the RDF data
                         """)
                     else:
-                        st.info("**💡 SHACL Validation Error:** The RDF data doesn't conform to the SHACL constraints.")
+                        st.info(f"""
+                        **💡 Persistent Validation Error:**
+                        
+                        Core error pattern: `{final_core_error}`
+                        
+                        This suggests a fundamental mismatch between the RDF data structure and SHACL constraints.
+                        Consider manual review of both files.
+                        """)
                 else:
                     st.warning("⚠️ Validation failed due to syntax or other errors.")
+
+            # Add debugging information for developers
+            if st.sidebar.checkbox("🔧 Show Debug Info", help="Show technical details for debugging"):
+                with st.expander("🔧 Debug Information"):
+                    st.markdown("**Error Pattern Analysis:**")
+                    if previous_core_errors:
+                        from collections import Counter
+                        error_counts = Counter(previous_core_errors)
+                        for error, count in error_counts.items():
+                            st.markdown(f"- `{error}`: occurred {count} time(s)")
+                    
+                    st.markdown("**Correction Attempt Summary:**")
+                    st.markdown(f"- Total attempts: {correction_attempt}")
+                    st.markdown(f"- Consecutive failures: {consecutive_failures}")
+                    st.markdown(f"- Final validation status: {'PASSED' if valid else 'FAILED'}")
                 
         # FINAL RESULTS SECTION - Make this very clear
         st.markdown("---")
