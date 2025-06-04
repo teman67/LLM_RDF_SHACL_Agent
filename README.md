@@ -162,17 +162,60 @@ python-dotenv>=1.0.0
 ### Agent Components
 
 ```mermaid
-graph TD
-    A[User Input] --> B[RDF Generator Agent]
-    B --> C[Critique Agent]
-    C --> D[Optimization Loop]
-    D --> B
-    D --> E[Validator Agent]
-    E --> F{Valid?}
-    F -->|No| G[Correction Agent]
-    G --> E
-    F -->|Yes| H[Ontology Mapper Agent]
-    H --> I[Output & Visualization]
+flowchart TD
+    A[User Input: Creep Test Report] --> B[RDFGeneratorAgent]
+
+    B --> C{Generate RDF & SHACL}
+    C --> D[RDF Code Generated]
+    C --> E[SHACL Code Generated]
+
+    D --> F[ValidatorAgent]
+    E --> F
+
+    F --> G{Validation Check}
+    G -->|Pass| H[CritiqueAgent]
+    G -->|Fail| I[CorrectionAgent]
+
+    I --> J[Fix Validation Errors]
+    J --> K[Corrected RDF & SHACL]
+    K --> F
+
+    H --> L[Technical Critique Analysis]
+    L --> M[OntologyMatcherAgent]
+
+    N[Load Ontology Files<br/>.ttl & .owl from /ontologies] --> M
+
+    M --> O{Find Term Matches}
+    O --> P[Extract RDF Terms]
+    P --> Q[Compare with Ontology Terms]
+    Q --> R[Calculate Similarity Scores]
+    R --> S{Similarity ≥ Threshold?}
+
+    S -->|Yes| T[Generate Match Report]
+    S -->|No| U[No Matches Found]
+
+    T --> V{Exact Matches?}
+    V -->|Yes| W[Replace Terms in RDF/SHACL]
+    V -->|No| X[Similar Matches Only]
+
+    W --> Y[Update Namespaces]
+    Y --> Z[Final RDF & SHACL Output]
+
+    X --> Z
+    U --> Z
+
+    %% Styling with larger fonts
+    classDef agent fill:#e1f5fe,stroke:#01579b,stroke-width:3px,font-size:16px,font-weight:bold
+    classDef process fill:#f3e5f5,stroke:#4a148c,stroke-width:3px,font-size:14px
+    classDef decision fill:#fff3e0,stroke:#e65100,stroke-width:3px,font-size:14px,font-weight:bold
+    classDef output fill:#e8f5e8,stroke:#2e7d32,stroke-width:3px,font-size:14px
+    classDef input fill:#fff8e1,stroke:#f57f17,stroke-width:3px,font-size:16px,font-weight:bold
+
+    class B,F,H,I,M agent
+    class C,J,P,Q,R,W,Y process
+    class G,O,S,V decision
+    class D,E,K,L,T,U,X,Z output
+    class A,N input
 ```
 
 ### Core Agents
