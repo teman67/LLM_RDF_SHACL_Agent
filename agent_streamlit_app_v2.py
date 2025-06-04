@@ -785,193 +785,70 @@ if st.button("Generate RDF & SHACL"):
         st.subheader("🌐 Final RDF Graph Visualization")
         st.markdown("**Visualization of your final RDF data:**")
 
-
-        def visualize_rdf(rdf_text, max_nodes=100):
-            """
-            Enhanced RDF visualization with better styling, filtering, and interaction
-            """
+        def visualize_rdf(rdf_text):
             try:
                 g = Graph().parse(data=rdf_text, format="turtle")
                 nx_graph = nx.DiGraph()
-                
-                # Count total triples for filtering if needed
-                total_triples = len(list(g))
-                
-                # Extract namespaces for better labeling
-                namespaces = {}
-                for prefix, uri in g.namespaces():
-                    if prefix:  # Skip empty prefixes
-                        namespaces[str(uri)] = prefix
-                
-                def get_short_label(uri_str):
-                    """Extract meaningful short labels from URIs"""
-                    # Check if it's a known namespace
-                    for namespace, prefix in namespaces.items():
-                        if uri_str.startswith(namespace):
-                            return f"{prefix}:{uri_str[len(namespace):]}"
-                    
-                    # Standard URL/URI processing
-                    if "/" in uri_str:
-                        label = uri_str.split("/")[-1]
-                    elif "#" in uri_str:
-                        label = uri_str.split("#")[-1]
-                    else:
-                        label = uri_str
-                        
-                    # Clean up common patterns
-                    label = label.replace("_", " ").replace("%20", " ")
-                    return label[:30] + "..." if len(label) > 30 else label
-                
-                def get_node_type(uri_str):
-                    """Determine node type for styling"""
-                    if uri_str.startswith("http://www.w3.org/1999/02/22-rdf-syntax-ns#"):
-                        return "rdf_system"
-                    elif uri_str.startswith("http://www.w3.org/2000/01/rdf-schema#"):
-                        return "rdfs_system"
-                    elif uri_str.startswith("http://www.w3.org/ns/shacl#"):
-                        return "shacl_system"
-                    elif re.match(r'^n\d+$', uri_str):
-                        return "blank_node"
-                    elif "http" in uri_str:
-                        return "uri_resource"
-                    elif uri_str.replace(".", "").replace("-", "").isdigit():
-                        return "literal_number"
-                    elif len(uri_str) > 50:
-                        return "literal_text"
-                    else:
-                        return "literal_simple"
-                
-                # Build graph with enhanced node information
-                node_info = {}
-                edge_counts = {}
-                
+
                 for s, p, o in g:
-                    s_str, p_str, o_str = str(s), str(p), str(o)
-                    
-                    # Track edge frequency for styling
-                    edge_key = (s_str, o_str, p_str)
-                    edge_counts[edge_key] = edge_counts.get(edge_key, 0) + 1
-                    
-                    # Add nodes with metadata
-                    for node_str in [s_str, o_str]:
-                        if node_str not in node_info:
-                            node_info[node_str] = {
-                                'label': get_short_label(node_str),
-                                'type': get_node_type(node_str),
-                                'full_uri': node_str,
-                                'connections': 0
-                            }
-                        node_info[node_str]['connections'] += 1
-                    
-                    nx_graph.add_edge(s_str, o_str, predicate=p_str, frequency=edge_counts[edge_key])
+                    nx_graph.add_edge(str(s), str(o), label=str(p))
+
+                # Create a larger network with improved physics settings
+                net = Network(height="900px", width="100%", directed=True, notebook=False)
                 
-                # Filter nodes if graph is too large
-                if len(nx_graph.nodes) > max_nodes:
-                    # Keep most connected nodes
-                    sorted_nodes = sorted(node_info.items(), key=lambda x: x[1]['connections'], reverse=True)
-                    keep_nodes = set([node for node, _ in sorted_nodes[:max_nodes]])
-                    
-                    # Create filtered subgraph
-                    nx_graph = nx_graph.subgraph(keep_nodes).copy()
-                    st.info(f"📊 Graph filtered to show {max_nodes} most connected nodes out of {len(node_info)} total nodes")
+                # Configure physics for better graph spacing
+                net.barnes_hut(gravity=-8000, central_gravity=0.3, spring_length=200, spring_strength=0.05, damping=0.09)
                 
-                # Create enhanced visualization
-                net = Network(
-                    height="1000px", 
-                    width="100%", 
-                    directed=True, 
-                    notebook=False,
-                    bgcolor="#fafafa",
-                    font_color="#2c3e50"
-                )
+                # Increase node spacing
+                net.repulsion(node_distance=300, central_gravity=0.01, spring_length=300, spring_strength=0.05, damping=0.09)
                 
-                # Define node styling based on type
-                node_styles = {
-                    "rdf_system": {"color": "#e74c3c", "size": 20, "shape": "box"},
-                    "rdfs_system": {"color": "#9b59b6", "size": 20, "shape": "box"}, 
-                    "shacl_system": {"color": "#f39c12", "size": 20, "shape": "diamond"},
-                    "blank_node": {"color": "#bdc3c7", "size": 15, "shape": "dot"},
-                    "uri_resource": {"color": "#3498db", "size": 25, "shape": "ellipse"},
-                    "literal_number": {"color": "#2ecc71", "size": 18, "shape": "box"},
-                    "literal_text": {"color": "#1abc9c", "size": 20, "shape": "text"},
-                    "literal_simple": {"color": "#27ae60", "size": 18, "shape": "ellipse"}
-                }
-                
-                # Add nodes with enhanced styling
-                for node in nx_graph.nodes():
-                    info = node_info.get(node, {})
-                    node_type = info.get('type', 'literal_simple')
-                    style = node_styles.get(node_type, node_styles['literal_simple'])
+                # Add nodes with larger size
+                # Inside your visualize_rdf function, update the node addition logic:
+                for node in nx_graph.nodes:
+                    # Extract shorter node labels for readability
+                    short_label = node.split("/")[-1] if "/" in node else node
+                    short_label = short_label.split("#")[-1] if "#" in short_label else short_label
                     
-                    # Scale size based on connections
-                    connection_scale = min(2.0, 1 + info.get('connections', 0) / 10)
-                    scaled_size = int(style['size'] * connection_scale)
+                    # Check if this is a blank node (starts with 'n' followed by numbers)
+                    is_blank_node = bool(re.match(r'^n\d+$', short_label))
                     
-                    # Special handling for blank nodes
-                    if node_type == "blank_node":
-                        display_label = ""
-                        title_text = f"Blank Node: {node}"
+                    # Use different styling for blank nodes
+                    if is_blank_node:
+                        node_color = "#E8E8E8"  # Light gray
+                        node_size = 15  # Smaller size
+                        label = ""  # Hide the label
                     else:
-                        display_label = info.get('label', node)
-                        title_text = f"Type: {node_type.replace('_', ' ').title()}\nConnections: {info.get('connections', 0)}\nFull URI: {info.get('full_uri', node)}"
+                        node_color = "#97C2FC"  # Default blue
+                        node_size = 25  # Normal size
+                        label = short_label
                     
-                    net.add_node(
-                        node, 
-                        label=display_label,
-                        size=scaled_size,
-                        color=style['color'],
-                        shape=style['shape'],
-                        font={'size': 14, 'color': '#2c3e50'},
-                        title=title_text,
-                        borderWidth=2,
-                        borderWidthSelected=4
-                    )
-                
-                # Add edges with enhanced styling
-                predicate_colors = {}
-                color_palette = ["#34495e", "#7f8c8d", "#95a5a6", "#2c3e50", "#5d6d7e"]
-                
-                for u, v, data in nx_graph.edges(data=True):
-                    predicate = data.get('predicate', '')
-                    frequency = data.get('frequency', 1)
+                    net.add_node(node, label=label, size=node_size, 
+                                color=node_color, font={'size': 16}, 
+                                title=node)  # Title shows on hover
+
+                # Add edges with better visibility
+                for u, v, d in nx_graph.edges(data=True):
+                    # Extract shorter edge labels
+                    edge_label = d["label"].split("/")[-1] if "/" in d["label"] else d["label"]
+                    edge_label = edge_label.split("#")[-1] if "#" in edge_label else edge_label
                     
-                    # Assign colors to predicates
-                    if predicate not in predicate_colors:
-                        predicate_colors[predicate] = color_palette[len(predicate_colors) % len(color_palette)]
-                    
-                    edge_label = get_short_label(predicate)
-                    edge_width = min(5, 1 + frequency)  # Width based on frequency
-                    
-                    # Create title with full information
-                    edge_title = f"Predicate: {predicate}\nFrequency: {frequency}"
-                    
-                    net.add_edge(
-                        u, v,
-                        label=edge_label,
-                        color=predicate_colors[predicate],
-                        width=edge_width,
-                        font={'size': 12, 'color': '#2c3e50', 'strokeWidth': 3, 'strokeColor': '#ffffff'},
-                        title=edge_title,
-                        arrows={'to': {'enabled': True, 'scaleFactor': 1.2}},
-                        smooth={'enabled': True, 'type': 'curvedCW', 'roundness': 0.1}
-                    )
-                
-                # Enhanced physics and layout options
+                    net.add_edge(u, v, label=edge_label, font={'size': 12}, width=1.5, title=d["label"])
+
+                # Set options for better visualization
                 net.set_options("""
                 const options = {
                     "physics": {
                         "enabled": true,
                         "stabilization": {
-                            "iterations": 200,
-                            "updateInterval": 25,
+                            "iterations": 100,
+                            "updateInterval": 10,
                             "fit": true
                         },
                         "barnesHut": {
-                            "gravitationalConstant": -3000,
-                            "springLength": 200,
+                            "gravitationalConstant": -8000,
+                            "springLength": 250,
                             "springConstant": 0.04,
-                            "damping": 0.09,
-                            "avoidOverlap": 0.1
+                            "damping": 0.09
                         }
                     },
                     "layout": {
@@ -984,199 +861,32 @@ if st.button("Generate RDF & SHACL"):
                         "navigationButtons": true,
                         "keyboard": true,
                         "hover": true,
-                        "hoverConnectedEdges": true,
-                        "selectConnectedEdges": true,
                         "multiselect": true,
-                        "tooltipDelay": 100,
-                        "zoomView": true,
-                        "dragView": true
-                    },
-                    "manipulation": {
-                        "enabled": false
-                    },
-                    "nodes": {
-                        "font": {
-                            "size": 14,
-                            "face": "Arial, sans-serif"
-                        },
-                        "borderWidth": 2,
-                        "shadow": {
-                            "enabled": true,
-                            "color": "rgba(0,0,0,0.2)",
-                            "size": 5,
-                            "x": 2,
-                            "y": 2
-                        }
-                    },
-                    "edges": {
-                        "font": {
-                            "size": 12,
-                            "face": "Arial, sans-serif",
-                            "strokeWidth": 2,
-                            "strokeColor": "#ffffff"
-                        },
-                        "shadow": {
-                            "enabled": true,
-                            "color": "rgba(0,0,0,0.1)",
-                            "size": 3,
-                            "x": 1,
-                            "y": 1
-                        }
+                        "tooltipDelay": 100
                     }
                 }
                 """)
-                
-                # Generate HTML with custom styling
+
                 html_content = net.generate_html()
-                
-                # Add custom CSS for better appearance
-                custom_css = """
-                <style>
-                #mynetworkid {
-                    border: 2px solid #ddd;
-                    border-radius: 10px;
-                    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-                    background: linear-gradient(45deg, #f8f9fa 0%, #ffffff 100%);
-                }
-                .vis-network {
-                    outline: none;
-                }
-                </style>
-                """
-                
-                # Insert custom CSS into HTML
-                html_content = html_content.replace('</head>', custom_css + '</head>')
-                
-                return html_content, len(nx_graph.nodes), len(nx_graph.edges), namespaces
-                
+                return html_content
+            
             except Exception as e:
                 st.error(f"Failed to parse RDF: {e}")
-                return None, 0, 0, {}
-
-        # Replace the RDF visualization section with this enhanced version:
-
-        # Visualize FINAL RDF with enhanced features
-        st.subheader("🌐 Enhanced RDF Graph Visualization")
-        st.markdown("**Interactive visualization of your final RDF data:**")
-
-        # Add visualization controls
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            max_nodes = st.slider("Maximum nodes to display", 50, 500, 150, 25, 
-                                help="Limit nodes for better performance with large graphs")
-        with col2:
-            show_legend = st.checkbox("Show legend", True, help="Display node type legend")
-        with col3:
-            graph_layout = st.selectbox("Layout style", 
-                                    ["Force-directed", "Hierarchical"], 
-                                    help="Choose graph layout algorithm")
-
-        # Generate visualization
-        html_content, node_count, edge_count, namespaces = visualize_rdf(rdf_code, max_nodes)
-
+                return None
+            
+        html_content = visualize_rdf(rdf_code)
         if html_content:
-            # Show graph statistics
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Nodes", node_count)
-            with col2:
-                st.metric("Edges", edge_count)
-            with col3:
-                st.metric("Namespaces", len(namespaces))
-            with col4:
-                st.metric("Triples", node_count + edge_count)
-            
-            # Display the visualization
             components.html(html_content, height=1000, width=1200, scrolling=True)
-            
-            # Show legend if requested
-            if show_legend:
-                with st.expander("🎨 Visualization Legend", expanded=False):
-                    st.markdown("""
-                    ### Node Types & Colors:
-                    - 🔴 **RDF System** (red boxes): Core RDF vocabulary terms
-                    - 🟣 **RDFS System** (purple boxes): RDF Schema vocabulary  
-                    - 🟠 **SHACL System** (orange diamonds): SHACL vocabulary terms
-                    - 🔵 **URI Resources** (blue ellipses): Your domain resources
-                    - 🟢 **Literal Numbers** (green boxes): Numeric values
-                    - 🟢 **Literal Text** (teal): Text values
-                    - ⚪ **Blank Nodes** (gray dots): Anonymous resources
-                    
-                    ### Edge Features:
-                    - **Width**: Indicates frequency of the relationship
-                    - **Color**: Different colors for different predicates
-                    - **Direction**: Arrows show triple direction (subject → object)
-                    
-                    ### Size Scaling:
-                    - Larger nodes have more connections
-                    - More connected = more important in the graph
-                    """)
-            
-            # Show namespace information
-            if namespaces:
-                with st.expander("📚 Namespace Prefixes", expanded=False):
-                    st.markdown("**Detected namespace prefixes in your RDF:**")
-                    for uri, prefix in namespaces.items():
-                        st.markdown(f"- **{prefix}:** `{uri}`")
-            
-            # Enhanced navigation instructions
-            with st.expander("🎮 Graph Navigation Guide", expanded=False):
-                st.markdown("""
-                ### Mouse Controls:
-                - **🖱️ Zoom**: Mouse wheel or trackpad pinch
-                - **🖱️ Pan**: Click and drag empty space
-                - **🖱️ Move nodes**: Click and drag any node
-                - **🖱️ Select**: Click nodes or edges to highlight
-                - **🖱️ Multi-select**: Hold Ctrl/Cmd while clicking
-                
-                ### Keyboard Shortcuts:
-                - **R**: Reset view to fit all nodes
-                - **S**: Take screenshot
-                - **Arrows**: Navigate when nodes are selected
-                
-                ### Visual Features:
-                - **Hover effects**: Hover over nodes/edges for details
-                - **Connected highlighting**: Click a node to highlight its connections
-                - **Smooth transitions**: Animated movements and zoom
-                - **Shadow effects**: Enhanced visual depth
-                
-                ### Performance Tips:
-                - Reduce max nodes for better performance with large graphs
-                - Use the filter controls to focus on specific parts
-                - Reset view (double-click) if graph becomes cluttered
-                """)
-                
-            # Add export options
-            st.markdown("### 📤 Export Options")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("📊 Export Graph Data"):
-                    graph_data = {
-                        "nodes": node_count,
-                        "edges": edge_count,
-                        "namespaces": namespaces,
-                        "visualization_settings": {
-                            "max_nodes": max_nodes,
-                            "layout": graph_layout
-                        }
-                    }
-                    st.download_button(
-                        "💾 Download Graph Info", 
-                        str(graph_data), 
-                        "rdf_graph_info.json", 
-                        "application/json"
-                    )
-            
-            with col2:
-                st.info("💡 **Tip**: Right-click the graph and select 'Save image as...' to export as PNG")
 
+            # Add instructions for graph interaction
+            st.markdown("""
+            ### Graph Navigation Instructions:
+            - **Zoom**: Use mouse wheel or pinch gesture
+            - **Pan**: Click and drag empty space
+            - **Move nodes**: Click and drag nodes to rearrange
+            - **View details**: Hover over nodes or edges for full information
+            - **Select multiple**: Hold Ctrl or Cmd while clicking nodes
+            - **Reset view**: Double-click on empty space
+            """)
         else:
             st.error("Could not generate RDF visualization")
-            st.info("""
-            **Possible issues:**
-            - Invalid RDF syntax
-            - Graph too complex to render
-            - Memory limitations
-            
-            Try reducing the maximum nodes or fixing RDF syntax errors.
-            """)
