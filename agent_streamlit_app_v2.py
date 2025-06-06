@@ -294,38 +294,38 @@ if st.button("Generate RDF & SHACL"):
                         st.error("Multiple correction failures. Stopping correction process.")
                         break
 
-            # Enhanced correction history display
-            if correction_history:
-                with st.expander("🔧 Detailed Correction History", expanded=False):
-                    # Group by error type for better organization
-                    syntax_corrections = [c for c in correction_history if c['error_type'] == 'syntax']
-                    validation_corrections = [c for c in correction_history if c['error_type'] == 'validation']
+            # # Enhanced correction history display
+            # if correction_history:
+            #     with st.expander("🔧 Detailed Correction History", expanded=False):
+            #         # Group by error type for better organization
+            #         syntax_corrections = [c for c in correction_history if c['error_type'] == 'syntax']
+            #         validation_corrections = [c for c in correction_history if c['error_type'] == 'validation']
                     
-                    if syntax_corrections:
-                        st.markdown("### 🔤 Syntax Error Corrections")
-                        for correction in syntax_corrections:
-                            st.markdown(f"**Attempt {correction['attempt']}** - Core Error: `{correction['core_error']}`")
+            #         if syntax_corrections:
+            #             st.markdown("### 🔤 Syntax Error Corrections")
+            #             for correction in syntax_corrections:
+            #                 st.markdown(f"**Attempt {correction['attempt']}** - Core Error: `{correction['core_error']}`")
                             
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.markdown("*RDF before correction:*")
-                                st.code(correction['rdf'][:500] + "..." if len(correction['rdf']) > 500 else correction['rdf'], language="turtle")
-                            with col2:
-                                st.markdown("*SHACL before correction:*")
-                                st.code(correction['shacl'][:500] + "..." if len(correction['shacl']) > 500 else correction['shacl'], language="turtle")
+            #                 col1, col2 = st.columns(2)
+            #                 with col1:
+            #                     st.markdown("*RDF before correction:*")
+            #                     st.code(correction['rdf'][:500] + "..." if len(correction['rdf']) > 500 else correction['rdf'], language="turtle")
+            #                 with col2:
+            #                     st.markdown("*SHACL before correction:*")
+            #                     st.code(correction['shacl'][:500] + "..." if len(correction['shacl']) > 500 else correction['shacl'], language="turtle")
                     
-                    if validation_corrections:
-                        st.markdown("### 📋 Validation Error Corrections")
-                        for correction in validation_corrections:
-                            st.markdown(f"**Attempt {correction['attempt']}** - Core Error: `{correction['core_error']}`")
+            #         if validation_corrections:
+            #             st.markdown("### 📋 Validation Error Corrections")
+            #             for correction in validation_corrections:
+            #                 st.markdown(f"**Attempt {correction['attempt']}** - Core Error: `{correction['core_error']}`")
                             
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.markdown("*RDF before correction:*")
-                                st.code(correction['rdf'][:500] + "..." if len(correction['rdf']) > 500 else correction['rdf'], language="turtle")
-                            with col2:
-                                st.markdown("*SHACL before correction:*")
-                                st.code(correction['shacl'][:500] + "..." if len(correction['shacl']) > 500 else correction['shacl'], language="turtle")
+            #                 col1, col2 = st.columns(2)
+            #                 with col1:
+            #                     st.markdown("*RDF before correction:*")
+            #                     st.code(correction['rdf'][:500] + "..." if len(correction['rdf']) > 500 else correction['rdf'], language="turtle")
+            #                 with col2:
+            #                     st.markdown("*SHACL before correction:*")
+            #                     st.code(correction['shacl'][:500] + "..." if len(correction['shacl']) > 500 else correction['shacl'], language="turtle")
 
             # Enhanced final validation status
             if valid:
@@ -550,17 +550,17 @@ if st.button("Generate RDF & SHACL"):
             st.info(f"🔄 **Ontology Integration:** {replacement_validation['replacements_made']} terms were replaced with ontology equivalents")
 
         # Final RDF output with clear labeling
-        st.subheader("📄 Final RDF Output")
+        st.subheader("📄 Final RDF Output after Term Replacement")
         st.markdown("**This is your final RDF file" + (" (with ontology term replacements)" if replacement_status else "") + ":**")
         st.code(rdf_code, language="turtle")
 
         # Final SHACL output with clear labeling  
-        st.subheader("🛡️ Final SHACL Output")
+        st.subheader("🛡️ Final SHACL Output after Term Replacement")
         st.markdown("**This is your final SHACL shapes file" + (" (with ontology term replacements)" if replacement_status else "") + ":**")
         st.code(shacl_code, language="turtle")
 
         # Final validation report
-        st.subheader("📋 Final Validation Report")
+        st.subheader("📋 Final Validation Report after Term Replacement")
         with st.expander("View Final Validation Details", expanded=valid is False):
             if 'replacement_validation' in locals() and replacement_validation and replacement_validation["replacements_made"] > 0:
                 st.markdown("**Validation of final version (after ontology term replacement):**")
