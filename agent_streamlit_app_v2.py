@@ -51,12 +51,12 @@ else:
 st.sidebar.header("🔍 Ontology Matching Configuration")
 similarity_threshold = st.sidebar.slider(
     "Similarity Threshold", 
-    0.0, 1.0, 0.7, 0.1,
+    0.0, 1.0, 0.9, 0.1,
     help="Minimum similarity score for ontology term matching (0.0 = very loose, 1.0 = exact match only)"
 )
 
-max_opt = st.sidebar.number_input("How many attempt to optimize RDF/SHACL data?", 1, 10, 3, help="Number of times the LLM should attempt to optimize RDF/SHACL")
-max_corr = st.sidebar.number_input("How many attempt to correct RDF/SHACL data to pass the validation process?", 1, 10, 3, help="Number of times the LLM should attempt to fix RDF/SHACL after validation fails")
+max_opt = st.sidebar.number_input("How many attempt to optimize RDF/SHACL data?", 0, 10, 2, help="Number of times the LLM should attempt to optimize RDF/SHACL")
+max_corr = st.sidebar.number_input("How many attempt to correct RDF/SHACL data to pass the validation process?", 0, 10, 5, help="Number of times the LLM should attempt to fix RDF/SHACL after validation fails")
 
 # Read content from a local text file
 try:
