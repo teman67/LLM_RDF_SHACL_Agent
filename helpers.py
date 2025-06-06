@@ -156,91 +156,214 @@ def validate_api_key(provider, api_key, endpoint=None):
         return False, f"Unexpected error while validating API key: {str(e)}"
     
 
+# def visualize_rdf(rdf_text):
+#             try:
+#                 g = Graph().parse(data=rdf_text, format="turtle")
+#                 nx_graph = nx.DiGraph()
+
+#                 for s, p, o in g:
+#                     nx_graph.add_edge(str(s), str(o), label=str(p))
+
+#                 # Create a larger network with improved physics settings
+#                 net = Network(height="900px", width="100%", directed=True, notebook=False)
+                
+#                 # Configure physics for better graph spacing
+#                 net.barnes_hut(gravity=-8000, central_gravity=0.3, spring_length=200, spring_strength=0.05, damping=0.09)
+                
+#                 # Increase node spacing
+#                 net.repulsion(node_distance=300, central_gravity=0.01, spring_length=300, spring_strength=0.05, damping=0.09)
+                
+#                 # Add nodes with larger size
+#                 # Inside your visualize_rdf function, update the node addition logic:
+#                 for node in nx_graph.nodes:
+#                     # Extract shorter node labels for readability
+#                     short_label = node.split("/")[-1] if "/" in node else node
+#                     short_label = short_label.split("#")[-1] if "#" in short_label else short_label
+                    
+#                     # Check if this is a blank node (starts with 'n' followed by numbers)
+#                     is_blank_node = bool(re.match(r'^n\d+$', short_label))
+                    
+#                     # Use different styling for blank nodes
+#                     if is_blank_node:
+#                         node_color = "#E8E8E8"  # Light gray
+#                         node_size = 15  # Smaller size
+#                         label = ""  # Hide the label
+#                     else:
+#                         node_color = "#97C2FC"  # Default blue
+#                         node_size = 25  # Normal size
+#                         label = short_label
+                    
+#                     net.add_node(node, label=label, size=node_size, 
+#                                 color=node_color, font={'size': 16}, 
+#                                 title=node)  # Title shows on hover
+
+#                 # Add edges with better visibility
+#                 for u, v, d in nx_graph.edges(data=True):
+#                     # Extract shorter edge labels
+#                     edge_label = d["label"].split("/")[-1] if "/" in d["label"] else d["label"]
+#                     edge_label = edge_label.split("#")[-1] if "#" in edge_label else edge_label
+                    
+#                     net.add_edge(u, v, label=edge_label, font={'size': 12}, width=1.5, title=d["label"])
+
+#                 # Set options for better visualization
+#                 net.set_options("""
+#                 const options = {
+#                     "physics": {
+#                         "enabled": true,
+#                         "stabilization": {
+#                             "iterations": 100,
+#                             "updateInterval": 10,
+#                             "fit": true
+#                         },
+#                         "barnesHut": {
+#                             "gravitationalConstant": -8000,
+#                             "springLength": 250,
+#                             "springConstant": 0.04,
+#                             "damping": 0.09
+#                         }
+#                     },
+#                     "layout": {
+#                         "improvedLayout": true,
+#                         "hierarchical": {
+#                             "enabled": false
+#                         }
+#                     },
+#                     "interaction": {
+#                         "navigationButtons": true,
+#                         "keyboard": true,
+#                         "hover": true,
+#                         "multiselect": true,
+#                         "tooltipDelay": 100
+#                     }
+#                 }
+#                 """)
+
+#                 html_content = net.generate_html()
+#                 return html_content
+            
+#             except Exception as e:
+#                 st.error(f"Failed to parse RDF: {e}")
+#                 return None
+            
+### Alternative visualization function with improved styling and layout
+
 def visualize_rdf(rdf_text):
-            try:
-                g = Graph().parse(data=rdf_text, format="turtle")
-                nx_graph = nx.DiGraph()
+    try:
+        g = Graph().parse(data=rdf_text, format="turtle")
+        nx_graph = nx.DiGraph()
 
-                for s, p, o in g:
-                    nx_graph.add_edge(str(s), str(o), label=str(p))
+        for s, p, o in g:
+            nx_graph.add_edge(str(s), str(o), label=str(p))
 
-                # Create a larger network with improved physics settings
-                net = Network(height="900px", width="100%", directed=True, notebook=False)
-                
-                # Configure physics for better graph spacing
-                net.barnes_hut(gravity=-8000, central_gravity=0.3, spring_length=200, spring_strength=0.05, damping=0.09)
-                
-                # Increase node spacing
-                net.repulsion(node_distance=300, central_gravity=0.01, spring_length=300, spring_strength=0.05, damping=0.09)
-                
-                # Add nodes with larger size
-                # Inside your visualize_rdf function, update the node addition logic:
-                for node in nx_graph.nodes:
-                    # Extract shorter node labels for readability
-                    short_label = node.split("/")[-1] if "/" in node else node
-                    short_label = short_label.split("#")[-1] if "#" in short_label else short_label
-                    
-                    # Check if this is a blank node (starts with 'n' followed by numbers)
-                    is_blank_node = bool(re.match(r'^n\d+$', short_label))
-                    
-                    # Use different styling for blank nodes
-                    if is_blank_node:
-                        node_color = "#E8E8E8"  # Light gray
-                        node_size = 15  # Smaller size
-                        label = ""  # Hide the label
-                    else:
-                        node_color = "#97C2FC"  # Default blue
-                        node_size = 25  # Normal size
-                        label = short_label
-                    
-                    net.add_node(node, label=label, size=node_size, 
-                                color=node_color, font={'size': 16}, 
-                                title=node)  # Title shows on hover
+        net = Network(height="900px", width="100%", directed=True, notebook=False)
 
-                # Add edges with better visibility
-                for u, v, d in nx_graph.edges(data=True):
-                    # Extract shorter edge labels
-                    edge_label = d["label"].split("/")[-1] if "/" in d["label"] else d["label"]
-                    edge_label = edge_label.split("#")[-1] if "#" in edge_label else edge_label
-                    
-                    net.add_edge(u, v, label=edge_label, font={'size': 12}, width=1.5, title=d["label"])
+        # Improved physics setup
+        net.barnes_hut(gravity=-8000, central_gravity=0.2, spring_length=250, spring_strength=0.03, damping=0.09)
 
-                # Set options for better visualization
-                net.set_options("""
-                const options = {
-                    "physics": {
+        for node in nx_graph.nodes:
+            short_label = node.split("/")[-1] if "/" in node else node
+            short_label = short_label.split("#")[-1] if "#" in short_label else short_label
+            is_blank_node = bool(re.match(r'^n\d+$', short_label))
+
+            # Custom visual styling based on node type
+            if "Class" in node:
+                node_color = "#FFD700"  # Gold for classes
+                shape = "box"
+                icon = "📦"
+            elif "Property" in node or "predicate" in node:
+                node_color = "#8FBC8F"  # Green for properties
+                shape = "ellipse"
+                icon = "🔗"
+            elif is_blank_node:
+                node_color = "#D3D3D3"  # Light gray for blank nodes
+                shape = "dot"
+                icon = ""
+            else:
+                node_color = "#87CEEB"  # Blue for default
+                shape = "ellipse"
+                icon = ""
+
+            label = f"{icon} {short_label}" if short_label else ""
+            net.add_node(
+                node, 
+                label=label,
+                title=node,
+                shape=shape,
+                color=node_color,
+                size=25,
+                font={'size': 18},
+                shadow=True
+            )
+
+        for u, v, d in nx_graph.edges(data=True):
+            edge_label = d["label"].split("/")[-1] if "/" in d["label"] else d["label"]
+            edge_label = edge_label.split("#")[-1] if "#" in edge_label else edge_label
+            net.add_edge(
+                u, v,
+                label=edge_label,
+                font={'size': 14, 'align': 'middle'},
+                width=2,
+                arrows='to',
+                title=d["label"],
+                color='#999'
+            )
+
+        net.set_options("""
+        const options = {
+            "nodes": {
+                "borderWidth": 2,
+                "shadow": true,
+                "scaling": {
+                    "min": 10,
+                    "max": 30
+                },
+                "font": {
+                    "size": 16,
+                    "face": "arial"
+                }
+            },
+            "edges": {
+                "color": {
+                    "inherit": false
+                },
+                "smooth": true,
+                "arrows": {
+                    "to": {
                         "enabled": true,
-                        "stabilization": {
-                            "iterations": 100,
-                            "updateInterval": 10,
-                            "fit": true
-                        },
-                        "barnesHut": {
-                            "gravitationalConstant": -8000,
-                            "springLength": 250,
-                            "springConstant": 0.04,
-                            "damping": 0.09
-                        }
-                    },
-                    "layout": {
-                        "improvedLayout": true,
-                        "hierarchical": {
-                            "enabled": false
-                        }
-                    },
-                    "interaction": {
-                        "navigationButtons": true,
-                        "keyboard": true,
-                        "hover": true,
-                        "multiselect": true,
-                        "tooltipDelay": 100
+                        "scaleFactor": 0.6
                     }
                 }
-                """)
+            },
+            "physics": {
+                "enabled": true,
+                "barnesHut": {
+                    "gravitationalConstant": -8000,
+                    "centralGravity": 0.2,
+                    "springLength": 200,
+                    "springConstant": 0.04,
+                    "damping": 0.09
+                },
+                "stabilization": {
+                    "enabled": true,
+                    "iterations": 150
+                }
+            },
+            "interaction": {
+                "hover": true,
+                "tooltipDelay": 100,
+                "navigationButtons": true,
+                "keyboard": true,
+                "multiselect": true,
+                "zoomView": true
+            },
+            "layout": {
+                "improvedLayout": true
+            }
+        }
+        """)
 
-                html_content = net.generate_html()
-                return html_content
-            
-            except Exception as e:
-                st.error(f"Failed to parse RDF: {e}")
-                return None
+        return net.generate_html()
+
+    except Exception as e:
+        st.error(f"Failed to parse RDF: {e}")
+        return None
