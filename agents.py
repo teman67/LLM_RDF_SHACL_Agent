@@ -640,3 +640,202 @@ class OntologyMatcherAgent:
             report.append("ensuring that relevant ontology files are placed in the ontologies/ directory.")
         
         return "\n".join(report)
+    
+    def replace_exact_matches(self, rdf_code: str, shacl_code: str, similarity_threshold: float = 0.7) -> Tuple[str, str, List[Dict]]:
+        """
+        Replace exact matches in RDF and SHACL with ontology terms
+        
+        Args:
+            rdf_code: Original RDF code
+            shacl_code: Original SHACL code  
+            similarity_threshold: Minimum similarity for matches
+            
+        Returns:
+            Tuple of (updated_rdf, updated_shacl, replacement_list)
+        """
+        # Get match results
+        results = self.find_matches(rdf_code, similarity_threshold)
+        
+        if results["status"] != "success":
+            return rdf_code, shacl_code, []
+        
+        # Filter for exact matches only
+        exact_matches = [match for match in results["matches"] if match["similarity_score"] == 1.0]
+        
+        if not exact_matches:
+            return rdf_code, shacl_code, []
+        
+        # Group matches by RDF term to avoid duplicate replacements
+        unique_matches = {}
+        for match in exact_matches:
+            rdf_term = match["rdf_term"]
+            if rdf_term not in unique_matches:
+                unique_matches[rdf_term] = match
+        
+        replacement_list = []
+        updated_rdf = rdf_code
+        updated_shacl = shacl_code
+        
+        # Perform replacements
+        for rdf_term, match in unique_matches.items():
+            ontology_term = match["ontology_term"]
+            
+            # Create replacement record
+            replacement_record = {
+                "original_term": rdf_term,
+                "replacement_term": ontology_term,
+                "ontology_file": match["ontology_file"],
+                "term_type": match["ontology_type"],
+                "label": match["ontology_label"],
+                "comment": match["ontology_comment"]
+            }
+            
+            # Replace in RDF and SHACL
+            # Use word boundaries to avoid partial replacements, but be careful with URIs
+            if rdf_term.startswith('http'):
+                # For full URIs, use exact string replacement
+                updated_rdf = updated_rdf.replace(f'<{rdf_term}>', f'<{ontology_term}>')
+                updated_shacl = updated_shacl.replace(f'<{rdf_term}>', f'<{ontology_term}>')
+            else:
+                # For prefixed terms, use word boundary replacement
+                pattern = r'\b' + re.escape(rdf_term) + r'\b'
+                updated_rdf = re.sub(pattern, ontology_term, updated_rdf)
+                updated_shacl = re.sub(pattern, ontology_term, updated_shacl)
+            
+            replacement_list.append(replacement_record)
+        
+        # Handle namespaces for new ontology terms
+        if replacement_list:
+            updated_rdf, updated_shacl = self._extract_and_update_namespaces(
+                updated_rdf, updated_shacl, replacement_list
+            )
+        
+        return updated_rdf, updated_shacl, replacement_list
+
+    def generate_replacement_report(self, replacement_list: List[Dict]) -> str:
+        """Generate a human-readable report of replacements made"""
+        if not replacement_list:
+            return "## 🔄 Term Replacement Report\n\nNo exact matches found for replacement."
+        
+        report = []
+        report.append("## 🔄 Term Replacement Report")
+        report.append("")
+        report.append(f"**{len(replacement_list)} exact matches replaced:**")
+        report.append("")
+        
+        for i, replacement in enumerate(replacement_list, 1):
+            report.append(f"### {i}. Term Replacement")
+            report.append(f"- **Original Term:** `{replacement['original_term']}`")
+            report.append(f"- **Replaced With:** `{replacement['replacement_term']}`")
+            report.append(f"- **Source Ontology:** {replacement['ontology_file']}")
+            report.append(f"- **Term Type:** {replacement['term_type']}")
+            
+            if replacement['label']:
+                report.append(f"- **Label:** {replacement['label']}")
+            
+            if replacement['comment']:
+                comment_preview = replacement['comment'][:150] + "..." if len(replacement['comment']) > 150 else replacement['comment']
+                report.append(f"- **Description:** {comment_preview}")
+            
+            report.append("")
+        
+        return "\n".join(report)
+    
+    def _extract_and_update_namespaces(self, rdf_code: str, shacl_code: str, replacement_list: List[Dict]) -> Tuple[str, str]:
+        """
+        Extract namespaces from ontology terms and add them to RDF/SHACL if needed
+        
+        Args:
+            rdf_code: Current RDF code
+            shacl_code: Current SHACL code
+            replacement_list: List of replacements made
+            
+        Returns:
+            Updated RDF and SHACL with necessary namespace declarations
+        """
+        # Extract existing namespaces
+        existing_namespaces = set()
+        namespace_pattern = r'@prefix\s+(\w+):\s+<([^>]+)>\s*\.'
+        
+        for match in re.finditer(namespace_pattern, rdf_code):
+            prefix, uri = match.groups()
+            existing_namespaces.add((prefix, uri))
+        
+        for match in re.finditer(namespace_pattern, shacl_code):
+            prefix, uri = match.groups()
+            existing_namespaces.add((prefix, uri))
+        
+        # Extract namespaces needed for replacement terms
+        needed_namespaces = set()
+        for replacement in replacement_list:
+            ontology_term = replacement['replacement_term']
+            
+            # Extract namespace from URI
+            if '#' in ontology_term:
+                namespace_uri = ontology_term.rsplit('#', 1)[0] + '#'
+            elif '/' in ontology_term:
+                parts = ontology_term.rsplit('/', 1)
+                namespace_uri = parts[0] + '/'
+            else:
+                continue
+            
+            # Create prefix from common ontology URIs or generate one
+            prefix = self._generate_prefix_for_uri(namespace_uri)
+            needed_namespaces.add((prefix, namespace_uri))
+        
+        # Add missing namespaces
+        new_namespaces = needed_namespaces - existing_namespaces
+        
+        updated_rdf = rdf_code
+        updated_shacl = shacl_code
+        
+        if new_namespaces:
+            namespace_declarations = []
+            for prefix, uri in new_namespaces:
+                namespace_declarations.append(f"@prefix {prefix}: <{uri}> .")
+            
+            namespace_block = "\n".join(namespace_declarations) + "\n\n"
+            
+            # Add to beginning of files
+            updated_rdf = namespace_block + updated_rdf
+            updated_shacl = namespace_block + updated_shacl
+        
+        return updated_rdf, updated_shacl
+
+    def _generate_prefix_for_uri(self, uri: str) -> str:
+        """Generate a reasonable prefix for a namespace URI"""
+        # Common ontology prefixes
+        common_prefixes = {
+            'http://www.w3.org/2002/07/owl#': 'owl',
+            'http://www.w3.org/2000/01/rdf-schema#': 'rdfs',
+            'http://www.w3.org/1999/02/22-rdf-syntax-ns#': 'rdf',
+            'http://www.w3.org/ns/shacl#': 'sh',
+            'http://purl.obolibrary.org/obo/': 'obo',
+            'http://xmlns.com/foaf/0.1/': 'foaf',
+            'http://purl.org/dc/terms/': 'dcterms',
+            'http://purl.org/dc/elements/1.1/': 'dc',
+        }
+        
+        if uri in common_prefixes:
+            return common_prefixes[uri]
+        
+        # Generate prefix from domain name or path
+        try:
+            if 'purl.org' in uri:
+                return 'purl'
+            elif 'w3.org' in uri:
+                return 'w3'
+            elif 'obolibrary.org' in uri:
+                return 'obo'
+            else:
+                # Extract from domain or use generic
+                import urllib.parse
+                parsed = urllib.parse.urlparse(uri)
+                domain_parts = parsed.netloc.split('.')
+                if len(domain_parts) > 1:
+                    return domain_parts[-2][:6]  # Use domain name, max 6 chars
+                else:
+                    return 'ns'  # Generic namespace
+        except:
+            return 'ns'
+    
