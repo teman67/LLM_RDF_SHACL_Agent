@@ -342,24 +342,28 @@ class OntologyMatcherAgent:
             st.info(f"No ontology files (.ttl or .owl) found in '{self.ontology_directory}' directory.")
             return
         
-        for file_path in ontology_files:
-            try:
-                filename = os.path.basename(file_path)
-                graph = Graph()
-                
-                # Determine format based on file extension
-                if file_path.endswith('.ttl'):
-                    graph.parse(file_path, format="turtle")
-                elif file_path.endswith('.owl'):
-                    graph.parse(file_path, format="xml")
-                
-                self.ontology_graphs[filename] = graph
-                self.ontology_terms[filename] = self._extract_terms(graph)
-                
-                st.success(f"✅ Loaded ontology: {filename} ({len(self.ontology_terms[filename])} terms)")
-                
-            except Exception as e:
-                st.error(f"❌ Failed to load {filename}: {str(e)}")
+        with st.spinner("ontology files are Loading..."):
+            for file_path in ontology_files:
+                try:
+                    filename = os.path.basename(file_path)
+                    graph = Graph()
+                    filenames = [os.path.basename(f) for f in ontology_files]
+                    
+                    # Determine format based on file extension
+                    if file_path.endswith('.ttl'):
+                        graph.parse(file_path, format="turtle")
+                    elif file_path.endswith('.owl'):
+                        graph.parse(file_path, format="xml")
+                    
+                    self.ontology_graphs[filename] = graph
+                    self.ontology_terms[filename] = self._extract_terms(graph)
+                    
+                    # st.success(f"✅ Loaded ontology: {filename} ({len(self.ontology_terms[filename])} terms)")
+                    
+                except Exception as e:
+                    st.error(f"❌ Failed to load {filename}: {str(e)}")
+            
+            st.success(f"✅ Ontology files: {', '.join(filenames)} are loaded successfully")
     
     def _extract_terms(self, graph: Graph) -> Dict[str, Dict]:
         """Extract terms (classes, properties, individuals) from an ontology graph"""
