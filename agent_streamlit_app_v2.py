@@ -406,6 +406,14 @@ if st.button("Generate RDF & SHACL"):
         with st.expander("View Final Validation Details", expanded=valid is False):
             st.code(report)
 
+        # visualize final RDF
+        st.subheader("🌐 RDF Graph Visualization")
+        html_content = visualize_rdf(rdf_code)
+        if html_content:
+            components.html(html_content, height=1000, width=1200, scrolling=True)
+        else:
+            st.error("Could not generate RDF visualization")
+
         # Download buttons with clear labeling
         st.subheader("⬇️ Download Final Files")
         col1, col2 = st.columns(2)
