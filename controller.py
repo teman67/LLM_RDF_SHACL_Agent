@@ -60,3 +60,35 @@ class SemanticPipelineAgent:
         ontology_matches = self.ontology_matcher.run(rdf_code)
 
         return rdf_code, shacl_code, conforms, report, ontology_mappings, ontology_matches
+    
+    def apply_ontology_replacements(self, rdf_code: str, shacl_code: str, similarity_threshold: float = 0.7):
+        """
+        Apply ontology term replacements and return updated RDF/SHACL with replacement info
+        
+        Args:
+            rdf_code: Original RDF code
+            shacl_code: Original SHACL code
+            similarity_threshold: Minimum similarity for matches
+            
+        Returns:
+            Tuple of (updated_rdf, updated_shacl, replacement_report, validation_results)
+        """
+        # Apply replacements
+        updated_rdf, updated_shacl, replacement_list = self.ontology_matcher.replace_exact_matches(
+            rdf_code, shacl_code, similarity_threshold
+        )
+        
+        # Generate replacement report
+        replacement_report = self.ontology_matcher.generate_replacement_report(replacement_list)
+        
+        # Validate the updated RDF/SHACL
+        validation_results = None
+        if replacement_list:  # Only validate if replacements were made
+            conforms, report = self.validator.run(updated_rdf, updated_shacl)
+            validation_results = {
+                "conforms": conforms,
+                "report": report,
+                "replacements_made": len(replacement_list)
+            }
+        
+        return updated_rdf, updated_shacl, replacement_report, validation_results
